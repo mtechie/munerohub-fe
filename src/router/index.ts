@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ensureAuthenticated, login } from '../auth/authStore'
 import HomeView from '../views/HomeView.vue'
+import LandingView from '../views/LandingView.vue'
 import AuthCallbackView from '../views/AuthCallbackView.vue'
 
 declare module 'vue-router' {
@@ -17,6 +18,11 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/landing',
+      name: 'landing',
+      component: LandingView,
     },
     {
       path: '/auth/callback',

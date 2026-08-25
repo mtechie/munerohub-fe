@@ -35,8 +35,8 @@ Whitelist these **Allowed callback URLs** on client `7f7p7o6fl9tbhguv85kdonr3gr`
 
 Whitelist these **Allowed sign-out URLs**:
 
-- `https://hub.munero.net/`
-- `http://localhost:5173/`
+- `https://hub.munero.net/landing`
+- `http://localhost:5173/landing`
 
 The app client must be a **public** client (no secret) with Authorization code grant and PKCE.
 

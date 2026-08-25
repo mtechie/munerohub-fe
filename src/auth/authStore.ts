@@ -393,7 +393,7 @@ export async function logout(): Promise<void> {
 
   clearTokens()
   clearOAuth()
-  const logoutUri = `${window.location.origin}/`
+  const logoutUri = `${window.location.origin}/landing`
   const params = new URLSearchParams({
     client_id: cognitoConfig.clientId,
     logout_uri: logoutUri,

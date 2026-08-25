@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { logout, user } from '../auth/authStore'
+import { accessClaims, logout, user } from '../auth/authStore'
 
 const primaryFields = computed(() => {
   const profile = user.value
@@ -18,15 +18,31 @@ const primaryFields = computed(() => {
   ].filter((field) => field.value)
 })
 
-const claimRows = computed(() => {
-  const claims = user.value?.claims ?? {}
+const authzFields = computed(() => {
+  const claims = accessClaims.value
+  if (!claims) {
+    return []
+  }
+
+  return [
+    { label: 'roles', value: formatClaim(claims.roles) },
+    { label: 'groups', value: formatClaim(claims.groups) },
+    { label: 'custom:ext_user_roles', value: formatClaim(claims.extUserRoles) },
+    { label: 'custom:ext_user_groups', value: formatClaim(claims.extUserGroups) },
+  ].filter((field) => field.value !== '[]' && field.value !== '')
+})
+
+const idClaimRows = computed(() => claimRows(user.value?.claims ?? {}))
+const accessClaimRows = computed(() => claimRows(accessClaims.value?.claims ?? {}))
+
+function claimRows(claims: Record<string, unknown>) {
   return Object.entries(claims)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => ({
       key,
       value: formatClaim(value),
     }))
-})
+}
 
 function formatClaim(value: unknown): string {
   if (value === null || value === undefined) {
@@ -60,9 +76,31 @@ function formatClaim(value: unknown): string {
     </section>
 
     <section class="card">
+      <h2>Access token authorization</h2>
+      <p class="hint">Use this access token as <code>Authorization: Bearer</code> for API calls — not the ID token.</p>
+      <dl v-if="authzFields.length">
+        <template v-for="field in authzFields" :key="field.label">
+          <dt>{{ field.label }}</dt>
+          <dd>{{ field.value }}</dd>
+        </template>
+      </dl>
+      <p v-else class="hint">No roles or groups claims on this access token.</p>
+    </section>
+
+    <section class="card">
+      <h2>Access token claims</h2>
+      <dl>
+        <template v-for="row in accessClaimRows" :key="row.key">
+          <dt>{{ row.key }}</dt>
+          <dd>{{ row.value }}</dd>
+        </template>
+      </dl>
+    </section>
+
+    <section class="card">
       <h2>ID token claims</h2>
       <dl>
-        <template v-for="row in claimRows" :key="row.key">
+        <template v-for="row in idClaimRows" :key="row.key">
           <dt>{{ row.key }}</dt>
           <dd>{{ row.value }}</dd>
         </template>
@@ -108,6 +146,17 @@ h2 {
   margin: 0 0 1rem;
   font-size: 0.95rem;
   font-weight: 650;
+}
+
+.hint {
+  margin: 0 0 1rem;
+  color: #5c6570;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.hint code {
+  font-size: 0.85em;
 }
 
 .sign-out {

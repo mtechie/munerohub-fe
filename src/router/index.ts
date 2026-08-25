@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isAuthenticated, login } from '../auth/authStore'
+import { ensureAuthenticated, login } from '../auth/authStore'
 import HomeView from '../views/HomeView.vue'
 import AuthCallbackView from '../views/AuthCallbackView.vue'
 
@@ -27,7 +27,11 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (!to.meta.requiresAuth || isAuthenticated.value) {
+  if (!to.meta.requiresAuth) {
+    return true
+  }
+
+  if (await ensureAuthenticated()) {
     return true
   }
 

@@ -26,12 +26,30 @@ export interface UserProfile {
   claims: Record<string, unknown>
 }
 
+export interface AccessClaims {
+  roles: string[]
+  groups: string[]
+  extUserRoles: string[]
+  extUserGroups: string[]
+  claims: Record<string, unknown>
+}
+
 interface AuthState {
   accessToken: string | null
   idToken: string | null
   refreshToken: string | null
   expiresAt: number | null
   user: UserProfile | null
+  accessClaims: AccessClaims | null
+}
+
+interface TokenEndpointPayload {
+  access_token?: string
+  id_token?: string
+  refresh_token?: string
+  expires_in?: number
+  error?: string
+  error_description?: string
 }
 
 const state = reactive<AuthState>({
@@ -40,7 +58,10 @@ const state = reactive<AuthState>({
   refreshToken: null,
   expiresAt: null,
   user: null,
+  accessClaims: null,
 })
+
+let refreshInFlight: Promise<boolean> | null = null
 
 export const isAuthenticated = computed(() => {
   return (
@@ -52,6 +73,7 @@ export const isAuthenticated = computed(() => {
 })
 
 export const user = computed(() => state.user)
+export const accessClaims = computed(() => state.accessClaims)
 
 function readStorage(key: string): string | null {
   try {
@@ -101,6 +123,16 @@ function claimString(claims: Record<string, unknown>, key: string): string | nul
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(/[,\s]+/).filter(Boolean)
+  }
+  return []
+}
+
 function profileFromIdToken(idToken: string): UserProfile {
   const claims = decodeJwtPayload(idToken)
   return {
@@ -114,12 +146,24 @@ function profileFromIdToken(idToken: string): UserProfile {
   }
 }
 
+function claimsFromAccessToken(accessToken: string): AccessClaims {
+  const claims = decodeJwtPayload(accessToken)
+  return {
+    roles: asStringArray(claims.roles),
+    groups: asStringArray(claims.groups),
+    extUserRoles: asStringArray(claims['custom:ext_user_roles']),
+    extUserGroups: asStringArray(claims['custom:ext_user_groups']),
+    claims,
+  }
+}
+
 function clearTokens(): void {
   state.accessToken = null
   state.idToken = null
   state.refreshToken = null
   state.expiresAt = null
   state.user = null
+  state.accessClaims = null
 
   for (const key of Object.values(TOKEN_KEYS)) {
     removeStorage(key)
@@ -135,23 +179,88 @@ function clearOAuth(): void {
 function persistTokens(tokens: {
   accessToken: string
   idToken: string
-  refreshToken: string | null
   expiresAt: number
+  refreshToken?: string | null
 }): void {
   state.accessToken = tokens.accessToken
   state.idToken = tokens.idToken
-  state.refreshToken = tokens.refreshToken
   state.expiresAt = tokens.expiresAt
   state.user = profileFromIdToken(tokens.idToken)
+  state.accessClaims = claimsFromAccessToken(tokens.accessToken)
 
   writeStorage(TOKEN_KEYS.accessToken, tokens.accessToken)
   writeStorage(TOKEN_KEYS.idToken, tokens.idToken)
   writeStorage(TOKEN_KEYS.expiresAt, String(tokens.expiresAt))
-  if (tokens.refreshToken) {
-    writeStorage(TOKEN_KEYS.refreshToken, tokens.refreshToken)
-  } else {
-    removeStorage(TOKEN_KEYS.refreshToken)
+
+  if (tokens.refreshToken === undefined) {
+    return
   }
+
+  if (tokens.refreshToken) {
+    state.refreshToken = tokens.refreshToken
+    writeStorage(TOKEN_KEYS.refreshToken, tokens.refreshToken)
+    return
+  }
+
+  state.refreshToken = null
+  removeStorage(TOKEN_KEYS.refreshToken)
+}
+
+async function postToken(body: URLSearchParams): Promise<{ ok: boolean; payload: TokenEndpointPayload }> {
+  const response = await fetch(`${cognitoConfig.domain}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+
+  let payload: TokenEndpointPayload = {}
+  try {
+    payload = (await response.json()) as TokenEndpointPayload
+  } catch {
+    payload = {}
+  }
+
+  return { ok: response.ok, payload }
+}
+
+async function refreshTokens(): Promise<boolean> {
+  if (refreshInFlight) {
+    return refreshInFlight
+  }
+
+  refreshInFlight = (async () => {
+    const currentRefresh = state.refreshToken
+    if (!currentRefresh) {
+      clearTokens()
+      return false
+    }
+
+    const { ok, payload } = await postToken(
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: cognitoConfig.clientId,
+        refresh_token: currentRefresh,
+      }),
+    )
+
+    const idToken = payload.id_token ?? state.idToken
+    if (!ok || !payload.access_token || !idToken) {
+      clearTokens()
+      return false
+    }
+
+    persistTokens({
+      accessToken: payload.access_token,
+      idToken,
+      expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
+      refreshToken: payload.refresh_token,
+    })
+    return true
+  })().finally(() => {
+    refreshInFlight = null
+  })
+
+  return refreshInFlight
 }
 
 export function hydrate(): void {
@@ -161,21 +270,52 @@ export function hydrate(): void {
   const expiresAtRaw = readStorage(TOKEN_KEYS.expiresAt)
   const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : NaN
 
-  if (!accessToken || !idToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+  if (!refreshToken && (!accessToken || !idToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
     clearTokens()
     return
   }
 
+  state.accessToken = accessToken
+  state.idToken = idToken
+  state.refreshToken = refreshToken
+  state.expiresAt = Number.isFinite(expiresAt) ? expiresAt : null
+
   try {
-    persistTokens({
-      accessToken,
-      idToken,
-      refreshToken,
-      expiresAt,
-    })
+    if (idToken) {
+      state.user = profileFromIdToken(idToken)
+    }
+    if (accessToken) {
+      state.accessClaims = claimsFromAccessToken(accessToken)
+    }
   } catch {
     clearTokens()
   }
+}
+
+export async function ensureAuthenticated(): Promise<boolean> {
+  if (isAuthenticated.value) {
+    return true
+  }
+  if (state.refreshToken) {
+    return refreshTokens()
+  }
+  clearTokens()
+  return false
+}
+
+export async function getAccessToken(): Promise<string | null> {
+  if (await ensureAuthenticated()) {
+    return state.accessToken
+  }
+  return null
+}
+
+export async function authorizationHeader(): Promise<{ Authorization: string } | Record<string, never>> {
+  const accessToken = await getAccessToken()
+  if (!accessToken) {
+    return {}
+  }
+  return { Authorization: `Bearer ${accessToken}` }
 }
 
 export async function login(): Promise<void> {
@@ -211,43 +351,46 @@ export async function handleCallback(code: string, returnedState: string): Promi
     throw new Error('Missing PKCE verifier. Please try again.')
   }
 
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    client_id: cognitoConfig.clientId,
-    code,
-    redirect_uri: cognitoConfig.redirectUri,
-    code_verifier: verifier,
-  })
+  const { ok, payload } = await postToken(
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: cognitoConfig.clientId,
+      code,
+      redirect_uri: cognitoConfig.redirectUri,
+      code_verifier: verifier,
+    }),
+  )
 
-  const response = await fetch(`${cognitoConfig.domain}/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  })
-
-  const payload = (await response.json()) as {
-    access_token?: string
-    id_token?: string
-    refresh_token?: string
-    expires_in?: number
-    error?: string
-    error_description?: string
-  }
-
-  if (!response.ok || !payload.access_token || !payload.id_token) {
+  if (!ok || !payload.access_token || !payload.id_token) {
     throw new Error(payload.error_description || payload.error || 'Token exchange failed')
   }
 
-  const expiresInMs = (payload.expires_in ?? 3600) * 1000
   persistTokens({
     accessToken: payload.access_token,
     idToken: payload.id_token,
     refreshToken: payload.refresh_token ?? null,
-    expiresAt: Date.now() + expiresInMs - EXPIRY_SKEW_MS,
+    expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
   })
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
+  const refreshToken = state.refreshToken
+  if (refreshToken) {
+    try {
+      await fetch(`${cognitoConfig.domain}/oauth2/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          token: refreshToken,
+          client_id: cognitoConfig.clientId,
+          token_type_hint: 'refresh_token',
+        }),
+      })
+    } catch {
+      // Local sign-out still proceeds if revoke is unreachable.
+    }
+  }
+
   clearTokens()
   clearOAuth()
   const logoutUri = `${window.location.origin}/`

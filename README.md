@@ -28,7 +28,7 @@ Local OAuth callback: `http://localhost:5173/auth/callback` (see `.env.developme
 
 ## Cognito app client
 
-Whitelist these **Allowed callback URLs** on client `4eac4ipe5jvj6g9j3d44rjr4ad`:
+Whitelist these **Allowed callback URLs** on client `7f7p7o6fl9tbhguv85kdonr3gr`:
 
 - `https://hub.munero.net/auth/callback`
 - `http://localhost:5173/auth/callback`

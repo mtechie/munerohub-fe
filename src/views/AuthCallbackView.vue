@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { handleCallback } from '../auth/authStore'
+import { ensureAuthenticated, handleCallback } from '../auth/authStore'
 
 const route = useRoute()
 const router = useRouter()
 const errorMessage = ref<string | null>(null)
 
 onMounted(async () => {
+  if (await ensureAuthenticated()) {
+    await router.replace({ name: 'home' })
+    return
+  }
+
   const oauthError = route.query.error
   if (typeof oauthError === 'string' && oauthError.length > 0) {
     const description = route.query.error_description
@@ -27,6 +32,10 @@ onMounted(async () => {
     await handleCallback(code, state)
     await router.replace({ name: 'home' })
   } catch (error) {
+    if (await ensureAuthenticated()) {
+      await router.replace({ name: 'home' })
+      return
+    }
     errorMessage.value = error instanceof Error ? error.message : 'Sign-in failed.'
   }
 })
@@ -51,7 +60,6 @@ onMounted(async () => {
 
 .error {
   max-width: 32rem;
-  margin: 0;
   color: #8a1f1f;
   line-height: 1.5;
 }

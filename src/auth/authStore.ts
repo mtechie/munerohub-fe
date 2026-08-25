@@ -14,6 +14,8 @@ const OAUTH_KEYS = {
   oauthState: 'munero.hub.oauth_state',
 } as const
 
+const PKCE_KEY_PREFIX = 'munero.hub.pkce.'
+
 const EXPIRY_SKEW_MS = 30_000
 const PKCE_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
 
@@ -108,6 +110,10 @@ function writeSession(key: string, value: string): void {
 
 function removeSession(key: string): void {
   sessionStorage.removeItem(key)
+}
+
+function pkceMapKey(state: string): string {
+  return `${PKCE_KEY_PREFIX}${state}`
 }
 
 function readToken(key: string): string | null {
@@ -368,6 +374,7 @@ export async function login(): Promise<void> {
     const stateValue = randomString(32)
     writeSession(OAUTH_KEYS.pkceVerifier, verifier)
     writeSession(OAUTH_KEYS.oauthState, stateValue)
+    writeLocal(pkceMapKey(stateValue), verifier)
 
     const params = new URLSearchParams({
       client_id: cognitoConfig.clientId,
@@ -387,16 +394,19 @@ export async function login(): Promise<void> {
 }
 
 export async function handleCallback(code: string, returnedState: string): Promise<void> {
-  const expectedState = readSession(OAUTH_KEYS.oauthState)
-  const verifier = readSession(OAUTH_KEYS.pkceVerifier)
+  const sessionState = readSession(OAUTH_KEYS.oauthState)
+  const sessionVerifier = readSession(OAUTH_KEYS.pkceVerifier)
   removeSession(OAUTH_KEYS.oauthState)
   removeSession(OAUTH_KEYS.pkceVerifier)
 
-  if (!expectedState || expectedState !== returnedState) {
-    throw new Error('Sign-in state mismatch. Please try again.')
-  }
+  const verifier =
+    sessionState === returnedState && sessionVerifier
+      ? sessionVerifier
+      : readLocal(pkceMapKey(returnedState))
+  removeLocal(pkceMapKey(returnedState))
+
   if (!verifier) {
-    throw new Error('Missing PKCE verifier. Please try again.')
+    throw new Error('Sign-in state mismatch. Please try again.')
   }
 
   const { ok, payload } = await postToken(

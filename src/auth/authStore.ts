@@ -1,11 +1,14 @@
 import { computed, reactive } from 'vue'
 import { cognitoConfig } from './config'
 
-const STORAGE_KEYS = {
+const TOKEN_KEYS = {
   accessToken: 'munero.hub.access_token',
   idToken: 'munero.hub.id_token',
   refreshToken: 'munero.hub.refresh_token',
   expiresAt: 'munero.hub.expires_at',
+} as const
+
+const OAUTH_KEYS = {
   pkceVerifier: 'munero.hub.pkce_verifier',
   oauthState: 'munero.hub.oauth_state',
 } as const
@@ -111,14 +114,20 @@ function profileFromIdToken(idToken: string): UserProfile {
   }
 }
 
-function clearSession(): void {
+function clearTokens(): void {
   state.accessToken = null
   state.idToken = null
   state.refreshToken = null
   state.expiresAt = null
   state.user = null
 
-  for (const key of Object.values(STORAGE_KEYS)) {
+  for (const key of Object.values(TOKEN_KEYS)) {
+    removeStorage(key)
+  }
+}
+
+function clearOAuth(): void {
+  for (const key of Object.values(OAUTH_KEYS)) {
     removeStorage(key)
   }
 }
@@ -135,25 +144,25 @@ function persistTokens(tokens: {
   state.expiresAt = tokens.expiresAt
   state.user = profileFromIdToken(tokens.idToken)
 
-  writeStorage(STORAGE_KEYS.accessToken, tokens.accessToken)
-  writeStorage(STORAGE_KEYS.idToken, tokens.idToken)
-  writeStorage(STORAGE_KEYS.expiresAt, String(tokens.expiresAt))
+  writeStorage(TOKEN_KEYS.accessToken, tokens.accessToken)
+  writeStorage(TOKEN_KEYS.idToken, tokens.idToken)
+  writeStorage(TOKEN_KEYS.expiresAt, String(tokens.expiresAt))
   if (tokens.refreshToken) {
-    writeStorage(STORAGE_KEYS.refreshToken, tokens.refreshToken)
+    writeStorage(TOKEN_KEYS.refreshToken, tokens.refreshToken)
   } else {
-    removeStorage(STORAGE_KEYS.refreshToken)
+    removeStorage(TOKEN_KEYS.refreshToken)
   }
 }
 
 export function hydrate(): void {
-  const accessToken = readStorage(STORAGE_KEYS.accessToken)
-  const idToken = readStorage(STORAGE_KEYS.idToken)
-  const refreshToken = readStorage(STORAGE_KEYS.refreshToken)
-  const expiresAtRaw = readStorage(STORAGE_KEYS.expiresAt)
+  const accessToken = readStorage(TOKEN_KEYS.accessToken)
+  const idToken = readStorage(TOKEN_KEYS.idToken)
+  const refreshToken = readStorage(TOKEN_KEYS.refreshToken)
+  const expiresAtRaw = readStorage(TOKEN_KEYS.expiresAt)
   const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : NaN
 
   if (!accessToken || !idToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    clearSession()
+    clearTokens()
     return
   }
 
@@ -165,15 +174,15 @@ export function hydrate(): void {
       expiresAt,
     })
   } catch {
-    clearSession()
+    clearTokens()
   }
 }
 
 export async function login(): Promise<void> {
   const verifier = randomString(64)
   const stateValue = randomString(32)
-  writeStorage(STORAGE_KEYS.pkceVerifier, verifier)
-  writeStorage(STORAGE_KEYS.oauthState, stateValue)
+  writeStorage(OAUTH_KEYS.pkceVerifier, verifier)
+  writeStorage(OAUTH_KEYS.oauthState, stateValue)
 
   const params = new URLSearchParams({
     client_id: cognitoConfig.clientId,
@@ -190,10 +199,10 @@ export async function login(): Promise<void> {
 }
 
 export async function handleCallback(code: string, returnedState: string): Promise<void> {
-  const expectedState = readStorage(STORAGE_KEYS.oauthState)
-  const verifier = readStorage(STORAGE_KEYS.pkceVerifier)
-  removeStorage(STORAGE_KEYS.oauthState)
-  removeStorage(STORAGE_KEYS.pkceVerifier)
+  const expectedState = readStorage(OAUTH_KEYS.oauthState)
+  const verifier = readStorage(OAUTH_KEYS.pkceVerifier)
+  removeStorage(OAUTH_KEYS.oauthState)
+  removeStorage(OAUTH_KEYS.pkceVerifier)
 
   if (!expectedState || expectedState !== returnedState) {
     throw new Error('Sign-in state mismatch. Please try again.')
@@ -239,7 +248,8 @@ export async function handleCallback(code: string, returnedState: string): Promi
 }
 
 export function logout(): void {
-  clearSession()
+  clearTokens()
+  clearOAuth()
   const logoutUri = `${window.location.origin}/`
   const params = new URLSearchParams({
     client_id: cognitoConfig.clientId,

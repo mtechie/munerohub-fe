@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import type { Router } from 'vue-router'
 import { cognitoConfig } from './config'
 
 const TOKEN_KEYS = {
@@ -62,6 +63,8 @@ const state = reactive<AuthState>({
 })
 
 let refreshInFlight: Promise<boolean> | null = null
+let loginInFlight: Promise<void> | null = null
+const TOKEN_KEY_VALUES: string[] = Object.values(TOKEN_KEYS)
 
 export const isAuthenticated = computed(() => {
   return (
@@ -75,7 +78,23 @@ export const isAuthenticated = computed(() => {
 export const user = computed(() => state.user)
 export const accessClaims = computed(() => state.accessClaims)
 
-function readStorage(key: string): string | null {
+function readLocal(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeLocal(key: string, value: string): void {
+  localStorage.setItem(key, value)
+}
+
+function removeLocal(key: string): void {
+  localStorage.removeItem(key)
+}
+
+function readSession(key: string): string | null {
   try {
     return sessionStorage.getItem(key)
   } catch {
@@ -83,12 +102,28 @@ function readStorage(key: string): string | null {
   }
 }
 
-function writeStorage(key: string, value: string): void {
+function writeSession(key: string, value: string): void {
   sessionStorage.setItem(key, value)
 }
 
-function removeStorage(key: string): void {
+function removeSession(key: string): void {
   sessionStorage.removeItem(key)
+}
+
+function readToken(key: string): string | null {
+  const fromLocal = readLocal(key)
+  if (fromLocal) {
+    return fromLocal
+  }
+
+  const fromSession = readSession(key)
+  if (!fromSession) {
+    return null
+  }
+
+  writeLocal(key, fromSession)
+  removeSession(key)
+  return fromSession
 }
 
 function randomString(length: number): string {
@@ -157,22 +192,27 @@ function claimsFromAccessToken(accessToken: string): AccessClaims {
   }
 }
 
-function clearTokens(): void {
+function resetMemory(): void {
   state.accessToken = null
   state.idToken = null
   state.refreshToken = null
   state.expiresAt = null
   state.user = null
   state.accessClaims = null
+}
 
-  for (const key of Object.values(TOKEN_KEYS)) {
-    removeStorage(key)
+function clearTokens(): void {
+  resetMemory()
+
+  for (const key of TOKEN_KEY_VALUES) {
+    removeLocal(key)
+    removeSession(key)
   }
 }
 
 function clearOAuth(): void {
   for (const key of Object.values(OAUTH_KEYS)) {
-    removeStorage(key)
+    removeSession(key)
   }
 }
 
@@ -188,9 +228,9 @@ function persistTokens(tokens: {
   state.user = profileFromIdToken(tokens.idToken)
   state.accessClaims = claimsFromAccessToken(tokens.accessToken)
 
-  writeStorage(TOKEN_KEYS.accessToken, tokens.accessToken)
-  writeStorage(TOKEN_KEYS.idToken, tokens.idToken)
-  writeStorage(TOKEN_KEYS.expiresAt, String(tokens.expiresAt))
+  writeLocal(TOKEN_KEYS.accessToken, tokens.accessToken)
+  writeLocal(TOKEN_KEYS.idToken, tokens.idToken)
+  writeLocal(TOKEN_KEYS.expiresAt, String(tokens.expiresAt))
 
   if (tokens.refreshToken === undefined) {
     return
@@ -198,12 +238,12 @@ function persistTokens(tokens: {
 
   if (tokens.refreshToken) {
     state.refreshToken = tokens.refreshToken
-    writeStorage(TOKEN_KEYS.refreshToken, tokens.refreshToken)
+    writeLocal(TOKEN_KEYS.refreshToken, tokens.refreshToken)
     return
   }
 
   state.refreshToken = null
-  removeStorage(TOKEN_KEYS.refreshToken)
+  removeLocal(TOKEN_KEYS.refreshToken)
 }
 
 async function postToken(body: URLSearchParams): Promise<{ ok: boolean; payload: TokenEndpointPayload }> {
@@ -264,10 +304,10 @@ async function refreshTokens(): Promise<boolean> {
 }
 
 export function hydrate(): void {
-  const accessToken = readStorage(TOKEN_KEYS.accessToken)
-  const idToken = readStorage(TOKEN_KEYS.idToken)
-  const refreshToken = readStorage(TOKEN_KEYS.refreshToken)
-  const expiresAtRaw = readStorage(TOKEN_KEYS.expiresAt)
+  const accessToken = readToken(TOKEN_KEYS.accessToken)
+  const idToken = readToken(TOKEN_KEYS.idToken)
+  const refreshToken = readToken(TOKEN_KEYS.refreshToken)
+  const expiresAtRaw = readToken(TOKEN_KEYS.expiresAt)
   const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : NaN
 
   if (!refreshToken && (!accessToken || !idToken || !Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
@@ -319,30 +359,38 @@ export async function authorizationHeader(): Promise<{ Authorization: string } |
 }
 
 export async function login(): Promise<void> {
-  const verifier = randomString(64)
-  const stateValue = randomString(32)
-  writeStorage(OAUTH_KEYS.pkceVerifier, verifier)
-  writeStorage(OAUTH_KEYS.oauthState, stateValue)
+  if (loginInFlight) {
+    return loginInFlight
+  }
 
-  const params = new URLSearchParams({
-    client_id: cognitoConfig.clientId,
-    response_type: 'code',
-    scope: cognitoConfig.scopes,
-    redirect_uri: cognitoConfig.redirectUri,
-    identity_provider: cognitoConfig.identityProvider,
-    state: stateValue,
-    code_challenge: await codeChallenge(verifier),
-    code_challenge_method: 'S256',
-  })
+  loginInFlight = (async () => {
+    const verifier = randomString(64)
+    const stateValue = randomString(32)
+    writeSession(OAUTH_KEYS.pkceVerifier, verifier)
+    writeSession(OAUTH_KEYS.oauthState, stateValue)
 
-  window.location.assign(`${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`)
+    const params = new URLSearchParams({
+      client_id: cognitoConfig.clientId,
+      response_type: 'code',
+      scope: cognitoConfig.scopes,
+      redirect_uri: cognitoConfig.redirectUri,
+      identity_provider: cognitoConfig.identityProvider,
+      state: stateValue,
+      code_challenge: await codeChallenge(verifier),
+      code_challenge_method: 'S256',
+    })
+
+    window.location.assign(`${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`)
+  })()
+
+  return loginInFlight
 }
 
 export async function handleCallback(code: string, returnedState: string): Promise<void> {
-  const expectedState = readStorage(OAUTH_KEYS.oauthState)
-  const verifier = readStorage(OAUTH_KEYS.pkceVerifier)
-  removeStorage(OAUTH_KEYS.oauthState)
-  removeStorage(OAUTH_KEYS.pkceVerifier)
+  const expectedState = readSession(OAUTH_KEYS.oauthState)
+  const verifier = readSession(OAUTH_KEYS.pkceVerifier)
+  removeSession(OAUTH_KEYS.oauthState)
+  removeSession(OAUTH_KEYS.pkceVerifier)
 
   if (!expectedState || expectedState !== returnedState) {
     throw new Error('Sign-in state mismatch. Please try again.')
@@ -399,6 +447,36 @@ export async function logout(): Promise<void> {
     logout_uri: logoutUri,
   })
   window.location.assign(`${cognitoConfig.domain}/logout?${params.toString()}`)
+}
+
+export function watchAuthStorage(router: Router): void {
+  let syncQueued = false
+
+  window.addEventListener('storage', (event) => {
+    const clearedAll = event.key === null
+    const clearedToken =
+      typeof event.key === 'string' && TOKEN_KEY_VALUES.includes(event.key) && event.newValue === null
+    if (!clearedAll && !clearedToken) {
+      return
+    }
+
+    if (syncQueued) {
+      return
+    }
+
+    syncQueued = true
+    queueMicrotask(() => {
+      syncQueued = false
+      if (readLocal(TOKEN_KEYS.accessToken) || readLocal(TOKEN_KEYS.refreshToken)) {
+        return
+      }
+
+      resetMemory()
+      if (router.currentRoute.value.meta.requiresAuth) {
+        void router.replace({ name: 'landing' })
+      }
+    })
+  })
 }
 
 hydrate()

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { accessClaims, logout, user } from '../auth/authStore'
+import { computed, ref } from 'vue'
+import { accessClaims, authorizationHeader, logout, user } from '../auth/authStore'
+
+const checkStatus = ref<'idle' | 'loading' | 'valid' | 'invalid'>('idle')
+const checkDetail = ref('')
 
 const primaryFields = computed(() => {
   const profile = user.value
@@ -53,6 +56,29 @@ function formatClaim(value: unknown): string {
   }
   return JSON.stringify(value)
 }
+
+async function checkToken(): Promise<void> {
+  checkStatus.value = 'loading'
+  checkDetail.value = ''
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+  try {
+    const response = await fetch(`${apiBase}/checktoken`, {
+      headers: await authorizationHeader(),
+    })
+    const body = await response.json().catch(() => null)
+    if (response.ok && body && body.valid === true) {
+      checkStatus.value = 'valid'
+      checkDetail.value = JSON.stringify(body, null, 2)
+      return
+    }
+    checkStatus.value = 'invalid'
+    checkDetail.value = JSON.stringify(body ?? { status: response.status }, null, 2)
+  } catch (error) {
+    checkStatus.value = 'invalid'
+    checkDetail.value = error instanceof Error ? error.message : 'Request failed'
+  }
+}
 </script>
 
 <template>
@@ -85,6 +111,12 @@ function formatClaim(value: unknown): string {
         </template>
       </dl>
       <p v-else class="hint">No roles or groups claims on this access token.</p>
+      <button type="button" class="sign-out check-token" :disabled="checkStatus === 'loading'" @click="checkToken">
+        {{ checkStatus === 'loading' ? 'Checking…' : 'Check Token' }}
+      </button>
+      <p v-if="checkStatus === 'valid'" class="check-ok">Token is valid</p>
+      <p v-if="checkStatus === 'invalid'" class="check-bad">Token is not valid</p>
+      <pre v-if="checkDetail" class="check-detail">{{ checkDetail }}</pre>
     </section>
 
     <section class="card">
@@ -172,6 +204,37 @@ h2 {
 
 .sign-out:hover {
   background: #eef1f4;
+}
+
+.sign-out:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.check-token {
+  margin-top: 1rem;
+}
+
+.check-ok {
+  margin: 0.85rem 0 0;
+  color: #1b6b3a;
+  font-weight: 600;
+}
+
+.check-bad {
+  margin: 0.85rem 0 0;
+  color: #8a1f1f;
+  font-weight: 600;
+}
+
+.check-detail {
+  margin: 0.65rem 0 0;
+  padding: 0.75rem 0.85rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  background: #f3f5f7;
+  border-radius: 0.5rem;
 }
 
 .card {

@@ -248,6 +248,14 @@ function toLaunchpadRows(buckets: RowBucket[]): LaunchpadRow[] {
         return { ...placed, row }
       })
       .sort((a, b) => a.columnStart - b.columnStart || a.order - b.order)
+
+    // If a visual row only contains one unpinned section, make it span the full 12-col width.
+    // This avoids an overly narrow section (and single-column tile grids) when there are no
+    // other sections in that row.
+    if (sections.length === 1 && !sections[0].pin) {
+      sections[0].columnStart = 1
+      sections[0].weight = 12
+    }
     return { row, sections }
   })
 }

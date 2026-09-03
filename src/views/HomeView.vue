@@ -2,8 +2,21 @@
 import { computed, ref } from 'vue'
 import { accessClaims, authorizationHeader, logout, user } from '../auth/authStore'
 
+type Privilege = {
+  scope?: string
+  description?: string
+  privilegeName?: string
+  privilegeTypeId?: string
+  privilegeTypeName?: string
+  privilegeIdentifier?: string
+  metadata?: { url?: string }
+}
+
 const checkStatus = ref<'idle' | 'loading' | 'valid' | 'invalid'>('idle')
 const checkDetail = ref('')
+const privilegesStatus = ref<'idle' | 'loading' | 'ok' | 'error'>('idle')
+const privilegesError = ref('')
+const privileges = ref<Privilege[]>([])
 
 const primaryFields = computed(() => {
   const profile = user.value
@@ -79,6 +92,36 @@ async function checkToken(): Promise<void> {
     checkDetail.value = error instanceof Error ? error.message : 'Request failed'
   }
 }
+
+async function loadPrivileges(): Promise<void> {
+  privilegesStatus.value = 'loading'
+  privilegesError.value = ''
+  privileges.value = []
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+  try {
+    const response = await fetch(`${apiBase}/privileges`, {
+      headers: await authorizationHeader(),
+    })
+    const body = await response.json().catch(() => null)
+    if (!response.ok) {
+      privilegesStatus.value = 'error'
+      privilegesError.value =
+        (body && (body.message as string)) || `Request failed (${response.status})`
+      return
+    }
+    if (!Array.isArray(body)) {
+      privilegesStatus.value = 'error'
+      privilegesError.value = 'Unexpected privileges response'
+      return
+    }
+    privilegesStatus.value = 'ok'
+    privileges.value = body
+  } catch (error) {
+    privilegesStatus.value = 'error'
+    privilegesError.value = error instanceof Error ? error.message : 'Request failed'
+  }
+}
 </script>
 
 <template>
@@ -117,6 +160,32 @@ async function checkToken(): Promise<void> {
       <p v-if="checkStatus === 'valid'" class="check-ok">Token is valid</p>
       <p v-if="checkStatus === 'invalid'" class="check-bad">Token is not valid</p>
       <pre v-if="checkDetail" class="check-detail">{{ checkDetail }}</pre>
+    </section>
+
+    <section class="card">
+      <h2>Privileges</h2>
+      <p class="hint">MuneroHub apps assigned through this user’s roles, groups, and user assignment.</p>
+      <button
+        type="button"
+        class="sign-out"
+        :disabled="privilegesStatus === 'loading'"
+        @click="loadPrivileges"
+      >
+        {{ privilegesStatus === 'loading' ? 'Loading…' : 'Load privileges' }}
+      </button>
+      <p v-if="privilegesStatus === 'error'" class="check-bad">{{ privilegesError }}</p>
+      <p v-else-if="privilegesStatus === 'ok' && !privileges.length" class="hint privileges-empty">
+        No MuneroHub privileges.
+      </p>
+      <ul v-else-if="privileges.length" class="privilege-list">
+        <li v-for="item in privileges" :key="item.privilegeIdentifier || item.privilegeName">
+          <a v-if="item.metadata?.url" :href="item.metadata.url" target="_blank" rel="noreferrer">
+            {{ item.privilegeName }}
+          </a>
+          <strong v-else>{{ item.privilegeName }}</strong>
+          <span v-if="item.description" class="privilege-desc">{{ item.description }}</span>
+        </li>
+      </ul>
     </section>
 
     <section class="card">
@@ -235,6 +304,35 @@ h2 {
   line-height: 1.4;
   background: #f3f5f7;
   border-radius: 0.5rem;
+}
+
+.privileges-empty {
+  margin-top: 0.85rem;
+}
+
+.privilege-list {
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.privilege-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.privilege-list a {
+  color: inherit;
+  font-weight: 650;
+}
+
+.privilege-desc {
+  color: #5c6570;
+  font-size: 0.9rem;
 }
 
 .card {

@@ -44,11 +44,20 @@ True if **all** of the ids are present. Empty argument list is false.
 
 `metadata.icon` is a CSS class on the tile. GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted.
 
+`section.pin` is `'start' | 'end' | 'top' | 'bottom'`. A pinned section takes that edge; other sections flow around it. The launchpad keeps a snapshot of the grid and does not rebuild when the privilege cache changes until the user clicks **Refresh Now**.
+
 ```json
 {
   "url": "https://giftlov.munero.net",
   "icon": "hub-icon-giftlov",
-  "order": 2
+  "order": 2,
+  "section": {
+    "id": "my-applications",
+    "title": "My applications",
+    "row": 1,
+    "weight": 8,
+    "order": 1
+  }
 }
 ```
 
@@ -57,7 +66,15 @@ True if **all** of the ids are present. Empty argument list is false.
   "url": "https://pxm-staging.munero.net",
   "icon": "hub-icon-pxm",
   "order": 1,
-  "tags": ["STAGING"]
+  "tags": ["STAGING"],
+  "section": {
+    "id": "test-environments",
+    "title": "Test Environments",
+    "row": 2,
+    "weight": 12,
+    "order": 1,
+    "pin": "bottom"
+  }
 }
 ```
 

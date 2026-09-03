@@ -1,4 +1,4 @@
-import type { Privilege, PrivilegeSection } from '../auth/privileges'
+import type { Privilege, PrivilegeSection, SectionPin } from '../auth/privileges'
 
 export interface LaunchpadTile {
   identifier: string
@@ -15,15 +15,24 @@ export interface LaunchpadSection {
   title: string
   row: number
   weight: number
+  columnStart: number
   backgroundColor?: string
   order: number
-  variant: 'apps' | 'staging' | 'aside'
+  pin?: SectionPin
+  variant: 'apps' | 'staging'
   tiles: LaunchpadTile[]
 }
 
 export interface LaunchpadRow {
   row: number
   sections: LaunchpadSection[]
+}
+
+type WorkingSection = LaunchpadSection & { metadataRow: number }
+
+interface RowBucket {
+  occupied: boolean[]
+  sections: WorkingSection[]
 }
 
 export const APPS_SECTION: PrivilegeSection = {
@@ -47,21 +56,18 @@ export const DEFAULT_TILE_ICONS: Record<string, string> = {
   PXM: 'hub-icon-pxm',
 }
 
-export const ASIDE_SECTION: LaunchpadSection = {
-  id: 'hub-aside',
-  title: '',
-  row: 1,
-  weight: 4,
-  order: 100,
-  variant: 'aside',
-  tiles: [],
-}
-
 function asTags(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
   }
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+}
+
+function asPin(value: unknown): SectionPin | undefined {
+  if (value === 'start' || value === 'end' || value === 'top' || value === 'bottom') {
+    return value
+  }
+  return undefined
 }
 
 function clampWeight(weight: number): number {
@@ -86,6 +92,7 @@ function resolveSection(privilege: Privilege): PrivilegeSection {
       weight: clampWeight(Number(section.weight) || (isStaging(tags) ? 12 : 8)),
       backgroundColor: section.backgroundColor,
       order: Number(section.order) || 1,
+      pin: asPin(section.pin),
     }
   }
   return isStaging(tags) ? { ...STAGING_SECTION } : { ...APPS_SECTION }
@@ -114,8 +121,139 @@ function sectionVariant(section: PrivilegeSection): LaunchpadSection['variant'] 
   return section.id === STAGING_SECTION.id ? 'staging' : 'apps'
 }
 
+function byOrder(a: WorkingSection, b: WorkingSection): number {
+  return a.order - b.order || a.title.localeCompare(b.title)
+}
+
+function emptyOccupied(): boolean[] {
+  return Array.from({ length: 13 }, () => false)
+}
+
+function rangeFree(occupied: boolean[], start: number, weight: number): boolean {
+  if (start < 1 || start + weight > 13) {
+    return false
+  }
+  for (let column = start; column < start + weight; column += 1) {
+    if (occupied[column]) {
+      return false
+    }
+  }
+  return true
+}
+
+function findFreeSpan(occupied: boolean[], weight: number, fromLeft: boolean): number | null {
+  if (fromLeft) {
+    for (let start = 1; start <= 13 - weight; start += 1) {
+      if (rangeFree(occupied, start, weight)) {
+        return start
+      }
+    }
+  } else {
+    for (let start = 13 - weight; start >= 1; start -= 1) {
+      if (rangeFree(occupied, start, weight)) {
+        return start
+      }
+    }
+  }
+  return null
+}
+
+function markOccupied(occupied: boolean[], start: number, weight: number): void {
+  for (let column = start; column < start + weight; column += 1) {
+    occupied[column] = true
+  }
+}
+
+function getBucket(buckets: RowBucket[], index: number): RowBucket {
+  while (buckets.length <= index) {
+    buckets.push({ occupied: emptyOccupied(), sections: [] })
+  }
+  return buckets[index]
+}
+
+function placeOnBucket(bucket: RowBucket, section: WorkingSection, fromLeft: boolean): boolean {
+  const columnStart = findFreeSpan(bucket.occupied, section.weight, fromLeft)
+  if (columnStart === null) {
+    return false
+  }
+  section.columnStart = columnStart
+  markOccupied(bucket.occupied, columnStart, section.weight)
+  bucket.sections.push(section)
+  return true
+}
+
+function placePinnedThenFlow(sections: WorkingSection[]): RowBucket[] {
+  const buckets: RowBucket[] = []
+  const starts = sections.filter((section) => section.pin === 'start').sort(byOrder)
+  const ends = sections.filter((section) => section.pin === 'end').sort(byOrder)
+  const flow = sections
+    .filter((section) => section.pin !== 'start' && section.pin !== 'end')
+    .sort(byOrder)
+
+  let startRow = 0
+  for (const section of starts) {
+    if (!placeOnBucket(getBucket(buckets, startRow), section, true)) {
+      startRow += 1
+      placeOnBucket(getBucket(buckets, startRow), section, true)
+    }
+  }
+
+  let endRow = 0
+  for (const section of ends) {
+    if (!placeOnBucket(getBucket(buckets, endRow), section, false)) {
+      endRow += 1
+      placeOnBucket(getBucket(buckets, endRow), section, false)
+    }
+  }
+
+  for (const section of flow) {
+    let placed = false
+    for (let index = 0; index < buckets.length; index += 1) {
+      if (placeOnBucket(getBucket(buckets, index), section, true)) {
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      placeOnBucket(getBucket(buckets, buckets.length), section, true)
+    }
+  }
+
+  return buckets.filter((bucket) => bucket.sections.length > 0)
+}
+
+function packLeftWrapping(sections: WorkingSection[]): RowBucket[] {
+  const buckets: RowBucket[] = []
+  for (const section of [...sections].sort(byOrder)) {
+    let placed = false
+    for (let index = 0; index < buckets.length; index += 1) {
+      if (placeOnBucket(getBucket(buckets, index), section, true)) {
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      placeOnBucket(getBucket(buckets, buckets.length), section, true)
+    }
+  }
+  return buckets.filter((bucket) => bucket.sections.length > 0)
+}
+
+function toLaunchpadRows(buckets: RowBucket[]): LaunchpadRow[] {
+  return buckets.map((bucket, index) => {
+    const row = index + 1
+    const sections = bucket.sections
+      .map((section) => {
+        const { metadataRow: _metadataRow, ...placed } = section
+        return { ...placed, row }
+      })
+      .sort((a, b) => a.columnStart - b.columnStart || a.order - b.order)
+    return { row, sections }
+  })
+}
+
 export function collectLaunchpadRows(privileges: Privilege[]): LaunchpadRow[] {
-  const sections = new Map<string, LaunchpadSection>()
+  const sections = new Map<string, WorkingSection>()
 
   for (const privilege of privileges) {
     const tile = toTile(privilege)
@@ -129,8 +267,15 @@ export function collectLaunchpadRows(privileges: Privilege[]): LaunchpadRow[] {
       continue
     }
     sections.set(resolved.id, {
-      ...resolved,
+      id: resolved.id,
+      title: resolved.title,
+      row: Number(resolved.row) || 1,
+      metadataRow: Number(resolved.row) || 1,
       weight: clampWeight(resolved.weight),
+      columnStart: 1,
+      backgroundColor: resolved.backgroundColor,
+      order: Number(resolved.order) || 1,
+      pin: resolved.pin,
       variant: 'apps',
       tiles: [tile],
     })
@@ -141,23 +286,25 @@ export function collectLaunchpadRows(privileges: Privilege[]): LaunchpadRow[] {
     section.variant = sectionVariant(section)
   }
 
-  const byRow = new Map<number, LaunchpadSection[]>()
-  for (const section of sections.values()) {
-    const list = byRow.get(section.row) ?? []
+  const collected = [...sections.values()]
+  const top = collected.filter((section) => section.pin === 'top').sort(byOrder)
+  const bottom = collected.filter((section) => section.pin === 'bottom').sort(byOrder)
+  const middle = collected.filter((section) => section.pin !== 'top' && section.pin !== 'bottom')
+
+  const middleByRow = new Map<number, WorkingSection[]>()
+  for (const section of middle) {
+    const list = middleByRow.get(section.metadataRow) ?? []
     list.push(section)
-    byRow.set(section.row, list)
+    middleByRow.set(section.metadataRow, list)
   }
 
-  const row1 = byRow.get(1) ?? []
-  if (!row1.some((section) => section.id === ASIDE_SECTION.id)) {
-    row1.push({ ...ASIDE_SECTION, tiles: [] })
-  }
-  byRow.set(1, row1)
+  const buckets: RowBucket[] = [
+    ...packLeftWrapping(top),
+    ...[...middleByRow.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .flatMap(([, list]) => placePinnedThenFlow(list)),
+    ...packLeftWrapping(bottom),
+  ]
 
-  return [...byRow.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([row, list]) => ({
-      row,
-      sections: list.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title)),
-    }))
+  return toLaunchpadRows(buckets)
 }

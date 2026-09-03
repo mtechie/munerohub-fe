@@ -11,6 +11,8 @@ const MIN_SYNC_INTERVAL_SECONDS = 30
 const LOCK_TTL_MS = 15_000
 const TAB_ID = crypto.randomUUID()
 
+export type SectionPin = 'start' | 'end' | 'top' | 'bottom'
+
 export interface PrivilegeSection {
   id: string
   title: string
@@ -18,6 +20,7 @@ export interface PrivilegeSection {
   weight: number
   backgroundColor?: string
   order: number
+  pin?: SectionPin
 }
 
 export interface Privilege {

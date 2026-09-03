@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { logout, user } from '../auth/authStore'
-import { hasPrivilege, privilegeAppUrl, privileges } from '../auth/privileges'
-import { collectLaunchpadRows, type LaunchpadSection, type LaunchpadTile } from '../launchpad/sections'
+import { onPrivilegesChanged, privileges } from '../auth/privileges'
+import {
+  collectLaunchpadRows,
+  type LaunchpadRow,
+  type LaunchpadSection,
+  type LaunchpadTile,
+} from '../launchpad/sections'
 import '../launchpad/icons.css'
 
 const givenName = computed(() => {
@@ -20,22 +25,40 @@ const displayName = computed(() => user.value?.givenName || user.value?.name || 
 const displayEmail = computed(() => user.value?.email || '')
 const avatarLetter = computed(() => (givenName.value[0] || 'M').toUpperCase())
 
-const rows = computed(() => collectLaunchpadRows(privileges.value))
+const layoutRows = ref<LaunchpadRow[]>([])
+const layoutReady = ref(false)
+const privilegesUpdated = ref(false)
+
+function applyLayout(): void {
+  layoutRows.value = collectLaunchpadRows(privileges.value)
+  layoutReady.value = true
+  privilegesUpdated.value = false
+}
+
+onMounted(() => {
+  applyLayout()
+  const stop = onPrivilegesChanged(() => {
+    if (!layoutReady.value || layoutRows.value.length === 0) {
+      applyLayout()
+      return
+    }
+    privilegesUpdated.value = true
+  })
+  onUnmounted(stop)
+})
 
 const navItems: Array<{ id: string; label: string; href: string; icon: string; active?: boolean }> = [
   { id: 'home', label: 'Home', href: '#top', icon: 'home', active: true },
   { id: 'applications', label: 'Applications', href: '#my-applications', icon: 'apps' },
-  { id: 'announcements', label: 'Announcements', href: '#announcements', icon: 'megaphone' },
-  { id: 'policies', label: 'Policies', href: '#policies', icon: 'document' },
   { id: 'test-environments', label: 'Test Environments', href: '#test-environments', icon: 'beaker' },
 ]
 
 function tilesOf(section: LaunchpadSection): LaunchpadTile[] {
-  return section.tiles.filter((tile) => hasPrivilege(tile.identifier))
+  return section.tiles
 }
 
 function tileHref(tile: LaunchpadTile): string | undefined {
-  return privilegeAppUrl(tile.identifier) ?? tile.url
+  return tile.url
 }
 
 function letterMark(name: string): string {
@@ -118,86 +141,66 @@ function stagingCaption(tile: LaunchpadTile): string {
           <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
         </section>
 
-        <div v-for="row in rows" :key="row.row" class="grid-row">
+        <div v-for="row in layoutRows" :key="row.row" class="grid-row">
           <section
             v-for="section in row.sections"
-            :id="section.id !== 'hub-aside' ? section.id : undefined"
+            :id="section.id"
             :key="section.id"
             class="section"
             :class="`variant-${section.variant}`"
             :style="{
               '--weight': String(section.weight),
+              '--col-start': String(section.columnStart),
               backgroundColor: section.backgroundColor || undefined,
             }"
           >
-            <template v-if="section.variant === 'aside'">
-              <article id="announcements" class="side-card">
-                <header class="section-head">
-                  <h2>Announcements</h2>
-                  <a href="#announcements">View all →</a>
-                </header>
-                <div class="announce-item">
-                  <span class="announce-icon" aria-hidden="true"></span>
-                  <div>
-                    <p>Information Security Policy Updated</p>
-                    <time>2 days ago</time>
-                  </div>
-                  <span class="tag">Important</span>
-                </div>
-              </article>
+            <header class="section-head">
+              <h2>{{ section.title }}</h2>
+              <a :href="`#${section.id}`">View all →</a>
+            </header>
 
-              <article id="policies" class="side-card">
-                <header class="section-head">
-                  <h2>Policies &amp; Resources</h2>
-                  <a href="#policies">View all →</a>
-                </header>
-                <a class="policy-item" href="#policies">Employee Code of Conduct</a>
-                <a class="policy-item" href="#policies">Security Practices</a>
-              </article>
-            </template>
+            <div v-if="section.variant === 'staging'" class="staging-grid">
+              <component
+                :is="tileHref(tile) ? 'a' : 'div'"
+                v-for="tile in tilesOf(section)"
+                :key="tile.identifier"
+                class="staging-card"
+                v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
+              >
+                <span v-if="isStagingTag(tile.tags) || section.variant === 'staging'" class="staging-tag">
+                  STAGING
+                </span>
+                <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
+                <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
+                <strong>{{ tile.name }}</strong>
+                <small>{{ stagingCaption(tile) }}</small>
+              </component>
+              <p v-if="!tilesOf(section).length" class="empty">No test environments assigned.</p>
+            </div>
 
-            <template v-else>
-              <header class="section-head">
-                <h2>{{ section.title }}</h2>
-                <a :href="`#${section.id}`">View all →</a>
-              </header>
-
-              <div v-if="section.variant === 'staging'" class="staging-grid">
-                <component
-                  :is="tileHref(tile) ? 'a' : 'div'"
-                  v-for="tile in tilesOf(section)"
-                  :key="tile.identifier"
-                  class="staging-card"
-                  v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
-                >
-                  <span v-if="isStagingTag(tile.tags) || section.variant === 'staging'" class="staging-tag">
-                    STAGING
-                  </span>
-                  <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                  <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                  <strong>{{ tile.name }}</strong>
-                  <small>{{ stagingCaption(tile) }}</small>
-                </component>
-                <p v-if="!tilesOf(section).length" class="empty">No test environments assigned.</p>
-              </div>
-
-              <div v-else class="apps-grid">
-                <component
-                  :is="tileHref(tile) ? 'a' : 'div'"
-                  v-for="tile in tilesOf(section)"
-                  :key="tile.identifier"
-                  class="app-tile"
-                  v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
-                >
-                  <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                  <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                  <span class="app-name">{{ tile.name }}</span>
-                </component>
-                <p v-if="!tilesOf(section).length" class="empty">No applications assigned.</p>
-              </div>
-            </template>
+            <div v-else class="apps-grid">
+              <component
+                :is="tileHref(tile) ? 'a' : 'div'"
+                v-for="tile in tilesOf(section)"
+                :key="tile.identifier"
+                class="app-tile"
+                v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
+              >
+                <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
+                <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
+                <span class="app-name">{{ tile.name }}</span>
+              </component>
+              <p v-if="!tilesOf(section).length" class="empty">No applications assigned.</p>
+            </div>
           </section>
         </div>
+      </div>
+    </div>
+
+    <div v-if="privilegesUpdated" class="privilege-gate" role="dialog" aria-modal="true" aria-labelledby="privilege-gate-title">
+      <div class="privilege-gate-card">
+        <p id="privilege-gate-title">Your privileges were updated</p>
+        <button type="button" @click="applyLayout">Refresh Now</button>
       </div>
     </div>
   </div>
@@ -274,7 +277,6 @@ function stagingCaption(tile: LaunchpadTile): string {
 .nav-icon,
 .search-icon,
 .bell-icon,
-.announce-icon,
 .m365-mark {
   display: inline-block;
   width: 1.15rem;
@@ -293,16 +295,6 @@ function stagingCaption(tile: LaunchpadTile): string {
 .nav-icon[data-icon='apps'] {
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><rect x='4' y='4' width='6' height='6' rx='1'/><rect x='14' y='4' width='6' height='6' rx='1'/><rect x='4' y='14' width='6' height='6' rx='1'/><rect x='14' y='14' width='6' height='6' rx='1'/></svg>");
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><rect x='4' y='4' width='6' height='6' rx='1'/><rect x='14' y='4' width='6' height='6' rx='1'/><rect x='4' y='14' width='6' height='6' rx='1'/><rect x='14' y='14' width='6' height='6' rx='1'/></svg>");
-}
-
-.nav-icon[data-icon='megaphone'] {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M4 10v4h3l7 4V6L7 10H4z'/><path d='M14 9.5c1.4.6 2.4 1.7 2.4 3s-1 2.4-2.4 3'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M4 10v4h3l7 4V6L7 10H4z'/><path d='M14 9.5c1.4.6 2.4 1.7 2.4 3s-1 2.4-2.4 3'/></svg>");
-}
-
-.nav-icon[data-icon='document'] {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M7 3.5h7l4 4V20.5H7z'/><path d='M14 3.5V8h4.5'/><path d='M9.5 12h5M9.5 15.5h5'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M7 3.5h7l4 4V20.5H7z'/><path d='M14 3.5V8h4.5'/><path d='M9.5 12h5M9.5 15.5h5'/></svg>");
 }
 
 .nav-icon[data-icon='beaker'] {
@@ -372,8 +364,7 @@ function stagingCaption(tile: LaunchpadTile): string {
   font-size: 0.88rem;
 }
 
-.user-meta small,
-.announce-item time {
+.user-meta small {
   color: #6b7380;
   font-size: 0.75rem;
   overflow: hidden;
@@ -531,7 +522,7 @@ kbd {
 }
 
 .section {
-  grid-column: span var(--weight, 12);
+  grid-column: var(--col-start, 1) / span var(--weight, 12);
   min-width: 0;
   scroll-margin-top: 1rem;
 }
@@ -555,15 +546,13 @@ kbd {
   font-weight: 700;
 }
 
-.section-head a,
-.policy-item {
+.section-head a {
   color: #6b7380;
   font-size: 0.82rem;
   text-decoration: none;
 }
 
-.section-head a:hover,
-.policy-item:hover {
+.section-head a:hover {
   color: #1a1f26;
 }
 
@@ -650,73 +639,46 @@ kbd {
   letter-spacing: 0.04em;
 }
 
-.variant-aside {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-
-.side-card {
-  background: #fff;
-  border: 1px solid #e7ecf1;
-  border-radius: 0.95rem;
-  padding: 1rem 1.05rem 0.95rem;
-  scroll-margin-top: 1rem;
-}
-
-.announce-item,
-.policy-item {
+.privilege-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgb(26 31 38 / 45%);
 }
 
-.announce-item p {
-  margin: 0;
-  font-size: 0.88rem;
+.privilege-gate-card {
+  width: min(22rem, 100%);
+  padding: 1.4rem 1.35rem 1.25rem;
+  background: #fff;
+  border-radius: 0.95rem;
+  box-shadow: 0 12px 40px rgb(26 31 38 / 16%);
+  text-align: center;
+}
+
+.privilege-gate-card p {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
   font-weight: 650;
 }
 
-.announce-icon {
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 999px;
-  background: #e8f6ee;
-  -webkit-mask: none;
-  mask: none;
+.privilege-gate-card button {
+  appearance: none;
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.55rem 1.1rem;
+  background: #f47b20;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
 }
 
-.announce-icon::before {
-  content: '';
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: #1b7a3a;
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M12 3.5 4.5 7v6.2c0 4.2 3.1 6.8 7.5 8.3 4.4-1.5 7.5-4.1 7.5-8.3V7z'/><path d='m8.8 12.1 2.2 2.2 4.2-4.3'/></svg>") center / 1rem no-repeat;
-  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M12 3.5 4.5 7v6.2c0 4.2 3.1 6.8 7.5 8.3 4.4-1.5 7.5-4.1 7.5-8.3V7z'/><path d='m8.8 12.1 2.2 2.2 4.2-4.3'/></svg>") center / 1rem no-repeat;
-}
-
-.tag {
-  margin-left: auto;
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  background: #e8f6ee;
-  color: #1b7a3a;
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.policy-item {
-  padding: 0.55rem 0;
-  border-top: 1px solid #eef1f4;
-  font-size: 0.88rem;
-  font-weight: 550;
-}
-
-.policy-item::after {
-  content: '›';
-  margin-left: auto;
-  color: #9aa3ad;
+.privilege-gate-card button:hover {
+  background: #e06e14;
 }
 
 .empty {

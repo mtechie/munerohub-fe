@@ -40,6 +40,27 @@ True if **all** of the ids are present. Empty argument list is false.
 <div v-if="hasAllPrivileges('GIFTLOV', 'PXM')">Both apps</div>
 ```
 
+## Launchpad `metadata`
+
+`metadata.icon` is a CSS class on the tile. GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted.
+
+```json
+{
+  "url": "https://giftlov.munero.net",
+  "icon": "hub-icon-giftlov",
+  "order": 2
+}
+```
+
+```json
+{
+  "url": "https://pxm-staging.munero.net",
+  "icon": "hub-icon-pxm",
+  "order": 1,
+  "tags": ["STAGING"]
+}
+```
+
 ## `getPrivilege(identifier)`
 
 Full privilege record, or `undefined`.

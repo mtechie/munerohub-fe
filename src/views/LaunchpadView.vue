@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { logout, user } from '../auth/authStore'
 import { hasPrivilege, privilegeAppUrl, privileges } from '../auth/privileges'
 import { collectLaunchpadRows, type LaunchpadSection, type LaunchpadTile } from '../launchpad/sections'
+import '../launchpad/icons.css'
 
 const givenName = computed(() => {
   const profile = user.value

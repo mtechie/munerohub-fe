@@ -42,6 +42,11 @@ export const STAGING_SECTION: PrivilegeSection = {
   order: 1,
 }
 
+export const DEFAULT_TILE_ICONS: Record<string, string> = {
+  GIFTLOV: 'hub-icon-giftlov',
+  PXM: 'hub-icon-pxm',
+}
+
 export const ASIDE_SECTION: LaunchpadSection = {
   id: 'hub-aside',
   title: '',
@@ -93,12 +98,13 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
     return null
   }
   const url = privilege.metadata?.url
+  const icon = typeof privilege.metadata?.icon === 'string' ? privilege.metadata.icon.trim() : ''
   return {
     identifier,
     name,
     description: privilege.description || '',
     url: typeof url === 'string' && url.length > 0 ? url : undefined,
-    icon: privilege.metadata?.icon,
+    icon: icon || DEFAULT_TILE_ICONS[identifier],
     order: Number(privilege.metadata?.order) || 0,
     tags: asTags(privilege.metadata?.tags),
   }

@@ -175,6 +175,27 @@ export function hasPrivilege(identifier: string): boolean {
   return privilegesState.items.some((item) => item.privilegeIdentifier === identifier)
 }
 
+export function hasAnyPrivilege(...identifiers: string[]): boolean {
+  return identifiers.some((identifier) => hasPrivilege(identifier))
+}
+
+export function hasAllPrivileges(...identifiers: string[]): boolean {
+  return identifiers.length > 0 && identifiers.every((identifier) => hasPrivilege(identifier))
+}
+
+export function getPrivilege(identifier: string): Privilege | undefined {
+  return privilegesState.items.find((item) => item.privilegeIdentifier === identifier)
+}
+
+export function listPrivilegesByType(typeId: string): Privilege[] {
+  return privilegesState.items.filter((item) => item.privilegeTypeId === typeId)
+}
+
+export function privilegeAppUrl(identifier: string): string | undefined {
+  const url = getPrivilege(identifier)?.metadata?.url
+  return typeof url === 'string' && url.length > 0 ? url : undefined
+}
+
 export async function fetchAndStorePrivileges(
   accessToken: string | null,
   options?: { failOpen?: boolean },

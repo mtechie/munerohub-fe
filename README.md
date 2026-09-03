@@ -2,6 +2,8 @@
 
 Vue 3 frontend for Munero Hub — a portal for Munero services. Unauthenticated visitors are redirected to Munero Connect (Amazon Cognito federated through Microsoft 365).
 
+Privilege-based show/hide helpers: [docs/privileges.md](docs/privileges.md).
+
 ## Stack
 
 - Vue 3 + Vite + TypeScript + Vue Router

@@ -1,22 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { accessClaims, authorizationHeader, logout, user } from '../auth/authStore'
-
-type Privilege = {
-  scope?: string
-  description?: string
-  privilegeName?: string
-  privilegeTypeId?: string
-  privilegeTypeName?: string
-  privilegeIdentifier?: string
-  metadata?: { url?: string }
-}
+import { accessClaims, authorizationHeader, getAccessToken, logout, user } from '../auth/authStore'
+import { fetchAndStorePrivileges, hasPrivilege, privileges } from '../auth/privileges'
 
 const checkStatus = ref<'idle' | 'loading' | 'valid' | 'invalid'>('idle')
 const checkDetail = ref('')
-const privilegesStatus = ref<'idle' | 'loading' | 'ok' | 'error'>('idle')
-const privilegesError = ref('')
-const privileges = ref<Privilege[]>([])
+const privilegesRefreshing = ref(false)
 
 const primaryFields = computed(() => {
   const profile = user.value
@@ -93,33 +82,12 @@ async function checkToken(): Promise<void> {
   }
 }
 
-async function loadPrivileges(): Promise<void> {
-  privilegesStatus.value = 'loading'
-  privilegesError.value = ''
-  privileges.value = []
-
-  const apiBase = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+async function refreshPrivileges(): Promise<void> {
+  privilegesRefreshing.value = true
   try {
-    const response = await fetch(`${apiBase}/privileges`, {
-      headers: await authorizationHeader(),
-    })
-    const body = await response.json().catch(() => null)
-    if (!response.ok) {
-      privilegesStatus.value = 'error'
-      privilegesError.value =
-        (body && (body.message as string)) || `Request failed (${response.status})`
-      return
-    }
-    if (!Array.isArray(body)) {
-      privilegesStatus.value = 'error'
-      privilegesError.value = 'Unexpected privileges response'
-      return
-    }
-    privilegesStatus.value = 'ok'
-    privileges.value = body
-  } catch (error) {
-    privilegesStatus.value = 'error'
-    privilegesError.value = error instanceof Error ? error.message : 'Request failed'
+    await fetchAndStorePrivileges(await getAccessToken())
+  } finally {
+    privilegesRefreshing.value = false
   }
 }
 </script>
@@ -164,21 +132,9 @@ async function loadPrivileges(): Promise<void> {
 
     <section class="card">
       <h2>Privileges</h2>
-      <p class="hint">MuneroHub apps assigned through this user’s roles, groups, and user assignment.</p>
-      <button
-        type="button"
-        class="sign-out"
-        :disabled="privilegesStatus === 'loading'"
-        @click="loadPrivileges"
-      >
-        {{ privilegesStatus === 'loading' ? 'Loading…' : 'Load privileges' }}
-      </button>
-      <p v-if="privilegesStatus === 'error'" class="check-bad">{{ privilegesError }}</p>
-      <p v-else-if="privilegesStatus === 'ok' && !privileges.length" class="hint privileges-empty">
-        No MuneroHub privileges.
-      </p>
-      <ul v-else-if="privileges.length" class="privilege-list">
-        <li v-for="item in privileges" :key="item.privilegeIdentifier || item.privilegeName">
+      <p class="hint">MuneroHub apps assigned through this user’s roles, groups, and user assignment. Loaded at sign-in and stored locally.</p>
+      <ul v-if="privileges.length" class="privilege-list">
+        <li v-for="item in privileges" :key="item.privilegeIdentifier || item.privilegeName" v-show="!item.privilegeIdentifier || hasPrivilege(item.privilegeIdentifier)">
           <a v-if="item.metadata?.url" :href="item.metadata.url" target="_blank" rel="noreferrer">
             {{ item.privilegeName }}
           </a>
@@ -186,6 +142,10 @@ async function loadPrivileges(): Promise<void> {
           <span v-if="item.description" class="privilege-desc">{{ item.description }}</span>
         </li>
       </ul>
+      <p v-else class="hint privileges-empty">No MuneroHub privileges.</p>
+      <button type="button" class="sign-out check-token" :disabled="privilegesRefreshing" @click="refreshPrivileges">
+        {{ privilegesRefreshing ? 'Refreshing…' : 'Refresh privileges' }}
+      </button>
     </section>
 
     <section class="card">

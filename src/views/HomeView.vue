@@ -1,11 +1,43 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { accessClaims, authorizationHeader, getAccessToken, logout, user } from '../auth/authStore'
-import { fetchAndStorePrivileges, hasPrivilege, privileges } from '../auth/privileges'
+import {
+  fetchAndStorePrivileges,
+  getPrivilege,
+  hasAllPrivileges,
+  hasAnyPrivilege,
+  hasPrivilege,
+  listPrivilegesByType,
+  onPrivilegesChanged,
+  privilegeAppUrl,
+  privileges,
+} from '../auth/privileges'
 
 const checkStatus = ref<'idle' | 'loading' | 'valid' | 'invalid'>('idle')
 const checkDetail = ref('')
 const privilegesRefreshing = ref(false)
+const testIdentifier = ref('GIFTLOV')
+const testIdentifierB = ref('PXM')
+const testTypeId = ref('APP')
+const lastPrivilegeEvent = ref('none yet (same list does not emit)')
+
+const helperResults = computed(() => {
+  void privileges.value
+  const a = testIdentifier.value.trim()
+  const b = testIdentifierB.value.trim()
+  const ids = [a, b].filter(Boolean)
+  const typeId = testTypeId.value.trim()
+  return {
+    hasPrivilege: a ? hasPrivilege(a) : false,
+    hasAnyPrivilege: ids.length > 0 ? hasAnyPrivilege(...ids) : false,
+    hasAllPrivileges: ids.length > 0 ? hasAllPrivileges(...ids) : false,
+    getPrivilege: a ? (getPrivilege(a) ?? null) : null,
+    listPrivilegesByType: typeId
+      ? listPrivilegesByType(typeId).map((item) => item.privilegeIdentifier)
+      : [],
+    privilegeAppUrl: a ? (privilegeAppUrl(a) ?? null) : null,
+  }
+})
 
 const primaryFields = computed(() => {
   const profile = user.value
@@ -90,6 +122,13 @@ async function refreshPrivileges(): Promise<void> {
     privilegesRefreshing.value = false
   }
 }
+
+onMounted(() => {
+  const stop = onPrivilegesChanged((items) => {
+    lastPrivilegeEvent.value = `${new Date().toISOString()} — ${items.length} item(s)`
+  })
+  onUnmounted(stop)
+})
 </script>
 
 <template>
@@ -146,6 +185,45 @@ async function refreshPrivileges(): Promise<void> {
       <button type="button" class="sign-out check-token" :disabled="privilegesRefreshing" @click="refreshPrivileges">
         {{ privilegesRefreshing ? 'Refreshing…' : 'Refresh privileges' }}
       </button>
+    </section>
+
+    <section class="card">
+      <h2>Privilege helper tester</h2>
+      <p class="hint">
+        Try the helpers from
+        <code>src/auth/privileges.ts</code>. Change ids and refresh privileges to see live results.
+        <code>onPrivilegesChanged</code> only updates when the list actually changes.
+      </p>
+      <div class="helper-fields">
+        <label>
+          Identifier A
+          <input v-model="testIdentifier" type="text" autocomplete="off" />
+        </label>
+        <label>
+          Identifier B
+          <input v-model="testIdentifierB" type="text" autocomplete="off" />
+        </label>
+        <label>
+          Type id
+          <input v-model="testTypeId" type="text" autocomplete="off" />
+        </label>
+      </div>
+      <dl class="helper-results">
+        <dt>hasPrivilege(A)</dt>
+        <dd>{{ helperResults.hasPrivilege }}</dd>
+        <dt>hasAnyPrivilege(A, B)</dt>
+        <dd>{{ helperResults.hasAnyPrivilege }}</dd>
+        <dt>hasAllPrivileges(A, B)</dt>
+        <dd>{{ helperResults.hasAllPrivileges }}</dd>
+        <dt>privilegeAppUrl(A)</dt>
+        <dd>{{ helperResults.privilegeAppUrl || 'undefined' }}</dd>
+        <dt>listPrivilegesByType(type)</dt>
+        <dd>{{ helperResults.listPrivilegesByType.join(', ') || '(none)' }}</dd>
+        <dt>onPrivilegesChanged</dt>
+        <dd>{{ lastPrivilegeEvent }}</dd>
+      </dl>
+      <p class="hint">getPrivilege(A)</p>
+      <pre class="check-detail">{{ JSON.stringify(helperResults.getPrivilege, null, 2) }}</pre>
     </section>
 
     <section class="card">
@@ -268,6 +346,34 @@ h2 {
 
 .privileges-empty {
   margin-top: 0.85rem;
+}
+
+.helper-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.helper-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: #5c6570;
+}
+
+.helper-fields input {
+  appearance: none;
+  border: 1px solid #cfd6dd;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  font: inherit;
+  color: inherit;
+}
+
+.helper-results {
+  margin-bottom: 0.85rem;
 }
 
 .privilege-list {

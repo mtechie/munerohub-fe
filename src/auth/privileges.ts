@@ -11,6 +11,15 @@ const MIN_SYNC_INTERVAL_SECONDS = 30
 const LOCK_TTL_MS = 15_000
 const TAB_ID = crypto.randomUUID()
 
+export interface PrivilegeSection {
+  id: string
+  title: string
+  row: number
+  weight: number
+  backgroundColor?: string
+  order: number
+}
+
 export interface Privilege {
   scope?: string
   description?: string
@@ -18,7 +27,13 @@ export interface Privilege {
   privilegeTypeId?: string
   privilegeTypeName?: string
   privilegeIdentifier?: string
-  metadata?: { url?: string }
+  metadata?: {
+    url?: string
+    icon?: string
+    order?: number
+    tags?: string[]
+    section?: PrivilegeSection
+  }
 }
 
 const privilegesState = reactive({ items: [] as Privilege[] })

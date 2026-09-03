@@ -2,7 +2,7 @@
 
 UI-only checks against the MuneroHub privileges cached in `localStorage`. APIs must still enforce authorization.
 
-Import from [`src/auth/privileges.ts`](../src/auth/privileges.ts). Helpers read the reactive store, so `v-if` updates when the cache changes. For imperative logic (not only `v-if`), use `onPrivilegesChanged`. The signed-in page has a **Privilege helper tester** card to try each method against the live cache.
+Import from [`src/auth/privileges.ts`](../src/auth/privileges.ts). Helpers read the reactive store, so `v-if` updates when the cache changes. For imperative logic (not only `v-if`), use `onPrivilegesChanged`. The launchpad on `/` shows assigned apps from this cache. The `/debug` page has a **Privilege helper tester** card to try each method against the live cache.
 
 ```ts
 import {

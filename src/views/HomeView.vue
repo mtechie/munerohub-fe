@@ -138,7 +138,10 @@ onMounted(() => {
         <p class="eyebrow">Munero Hub</p>
         <h1>Signed in</h1>
       </div>
-      <button type="button" class="sign-out" @click="logout">Sign out</button>
+      <div class="header-actions">
+        <RouterLink class="sign-out" to="/">Launchpad</RouterLink>
+        <button type="button" class="sign-out" @click="logout">Sign out</button>
+      </div>
     </header>
 
     <section v-if="primaryFields.length" class="card">
@@ -298,6 +301,11 @@ h2 {
   font-size: 0.85em;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
 .sign-out {
   appearance: none;
   border: 1px solid #cfd6dd;
@@ -306,6 +314,7 @@ h2 {
   border-radius: 0.5rem;
   padding: 0.5rem 0.9rem;
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 

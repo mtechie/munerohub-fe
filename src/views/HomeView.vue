@@ -85,7 +85,7 @@ async function checkToken(): Promise<void> {
 async function refreshPrivileges(): Promise<void> {
   privilegesRefreshing.value = true
   try {
-    await fetchAndStorePrivileges(await getAccessToken())
+    await fetchAndStorePrivileges(await getAccessToken(), { failOpen: false })
   } finally {
     privilegesRefreshing.value = false
   }

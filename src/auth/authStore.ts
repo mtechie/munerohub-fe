@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import type { Router } from 'vue-router'
 import { cognitoConfig } from './config'
-import { clearPrivileges, fetchAndStorePrivileges, hasCachedPrivileges, hydratePrivileges, PRIVILEGES_KEY } from './privileges'
+import { clearPrivileges, fetchAndStorePrivileges, hasCachedPrivileges, hydratePrivileges, PRIVILEGES_KEY, startPrivilegeSync } from './privileges'
 
 const TOKEN_KEYS = {
   accessToken: 'munero.hub.access_token',
@@ -343,17 +343,25 @@ export function hydrate(): void {
   hydratePrivileges()
 }
 
+function beginPrivilegeSync(): void {
+  startPrivilegeSync(getAccessToken)
+}
+
 export async function ensureAuthenticated(): Promise<boolean> {
   if (isAuthenticated.value) {
     if (!hasCachedPrivileges()) {
       void fetchAndStorePrivileges(state.accessToken)
     }
+    beginPrivilegeSync()
     return true
   }
   if (state.refreshToken) {
     const refreshed = await refreshTokens()
     if (refreshed && !hasCachedPrivileges()) {
       void fetchAndStorePrivileges(state.accessToken)
+    }
+    if (refreshed) {
+      beginPrivilegeSync()
     }
     return refreshed
   }
@@ -442,6 +450,7 @@ export async function handleCallback(code: string, returnedState: string): Promi
     expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
   })
   await fetchAndStorePrivileges(payload.access_token)
+  beginPrivilegeSync()
 }
 
 export async function logout(): Promise<void> {
@@ -509,3 +518,6 @@ export function watchAuthStorage(router: Router): void {
 }
 
 hydrate()
+if (state.accessToken || state.refreshToken) {
+  beginPrivilegeSync()
+}

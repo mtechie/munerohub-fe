@@ -6,7 +6,7 @@ const SYNC_INTERVAL_KEY = 'munero.hub.privileges_sync_interval'
 const SYNCED_AT_KEY = 'munero.hub.privileges_synced_at'
 const LOCK_KEY = 'munero.hub.privileges_lock'
 const LOCK_NAME = 'munero.hub.privileges-sync'
-const DEFAULT_SYNC_INTERVAL_SECONDS = 120
+const DEFAULT_SYNC_INTERVAL_SECONDS = 600
 const MIN_SYNC_INTERVAL_SECONDS = 30
 const LOCK_TTL_MS = 15_000
 const TAB_ID = crypto.randomUUID()
@@ -24,6 +24,42 @@ export interface Privilege {
 const privilegesState = reactive({ items: [] as Privilege[] })
 
 export const privileges = computed(() => privilegesState.items)
+
+export type PrivilegesChangedListener = (items: Privilege[]) => void
+
+const changeListeners = new Set<PrivilegesChangedListener>()
+
+export function onPrivilegesChanged(listener: PrivilegesChangedListener): () => void {
+  changeListeners.add(listener)
+  return () => {
+    changeListeners.delete(listener)
+  }
+}
+
+function emitPrivilegesChanged(items: Privilege[]): void {
+  for (const listener of changeListeners) {
+    listener(items)
+  }
+}
+
+function privilegeFingerprint(items: Privilege[]): string {
+  const normalized = items
+    .map((item) => ({
+      description: item.description ?? '',
+      metadata: item.metadata ?? null,
+      privilegeIdentifier: item.privilegeIdentifier ?? '',
+      privilegeName: item.privilegeName ?? '',
+      privilegeTypeId: item.privilegeTypeId ?? '',
+      privilegeTypeName: item.privilegeTypeName ?? '',
+      scope: item.scope ?? '',
+    }))
+    .sort((a, b) => a.privilegeIdentifier.localeCompare(b.privilegeIdentifier))
+  return JSON.stringify(normalized)
+}
+
+function privilegesEqual(left: Privilege[], right: Privilege[]): boolean {
+  return privilegeFingerprint(left) === privilegeFingerprint(right)
+}
 
 let syncTimer: number | null = null
 let getAccessToken: (() => Promise<string | null>) | null = null
@@ -70,9 +106,14 @@ function markSynced(): void {
   writeLocal(SYNCED_AT_KEY, String(Date.now()))
 }
 
-function persist(items: Privilege[]): void {
+function persist(items: Privilege[]): boolean {
+  if (privilegesEqual(privilegesState.items, items)) {
+    return false
+  }
   privilegesState.items = items
   writeLocal(PRIVILEGES_KEY, JSON.stringify(items))
+  emitPrivilegesChanged(items)
+  return true
 }
 
 function parsePrivilegesBody(body: unknown): { items: Privilege[]; syncIntervalSeconds?: number } | null {
@@ -97,15 +138,15 @@ export function hasCachedPrivileges(): boolean {
 export function hydratePrivileges(): void {
   const raw = readLocal(PRIVILEGES_KEY)
   if (raw === null) {
-    privilegesState.items = []
+    persist([])
     return
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown
-    privilegesState.items = Array.isArray(parsed) ? (parsed as Privilege[]) : []
+    persist(Array.isArray(parsed) ? (parsed as Privilege[]) : [])
   } catch {
-    privilegesState.items = []
+    persist([])
   }
 }
 
@@ -123,7 +164,7 @@ export function stopPrivilegeSync(): void {
 
 export function clearPrivileges(): void {
   stopPrivilegeSync()
-  privilegesState.items = []
+  persist([])
   removeLocal(PRIVILEGES_KEY)
   removeLocal(SYNC_INTERVAL_KEY)
   removeLocal(SYNCED_AT_KEY)

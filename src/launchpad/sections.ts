@@ -231,11 +231,16 @@ function toLaunchpadRows(buckets: RowBucket[]): LaunchpadRow[] {
   return buckets.map((bucket, index) => {
     const row = index + 1
     const sections = bucket.sections
+      .filter((section) => section.tiles.length > 0)
       .map((section) => {
         const { metadataRow: _metadataRow, ...placed } = section
         return { ...placed, row }
       })
       .sort((a, b) => a.columnStart - b.columnStart || a.order - b.order)
+
+    if (sections.length === 0) {
+      return { row, sections }
+    }
 
     // If a visual row only contains one unpinned section, make it span the full 12-col width.
     // This avoids an overly narrow section (and single-column tile grids) when there are no
@@ -245,7 +250,7 @@ function toLaunchpadRows(buckets: RowBucket[]): LaunchpadRow[] {
       sections[0].weight = 12
     }
     return { row, sections }
-  })
+  }).filter((row) => row.sections.length > 0)
 }
 
 function catalogById(catalog: PrivilegeSection[]): Map<string, PrivilegeSection> {
@@ -299,7 +304,7 @@ export function collectLaunchpadRows(privileges: Privilege[], catalog: Privilege
     section.tiles.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   }
 
-  const collected = [...sections.values()]
+  const collected = [...sections.values()].filter((section) => section.tiles.length > 0)
   const top = collected.filter((section) => section.pin === 'top').sort(byOrder)
   const bottom = collected.filter((section) => section.pin === 'bottom').sort(byOrder)
   const middle = collected.filter((section) => section.pin !== 'top' && section.pin !== 'bottom')

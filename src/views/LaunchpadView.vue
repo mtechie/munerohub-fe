@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { authBusy, isAuthenticated, logout, user } from '../auth/authStore'
-import { onPrivilegesChanged, privileges, sections } from '../auth/privileges'
+import { getPrivilege, onPrivilegesChanged, privileges, sections } from '../auth/privileges'
 import {
   collectLaunchpadRows,
   type LaunchpadRow,
@@ -9,6 +9,14 @@ import {
   type LaunchpadTile,
 } from '../launchpad/sections'
 import '../launchpad/icons.css'
+
+interface SearchHit {
+  identifier: string
+  name: string
+  type: string
+  icon?: string
+  url?: string
+}
 
 const givenName = computed(() => {
   const profile = user.value
@@ -29,6 +37,11 @@ const layoutRows = ref<LaunchpadRow[]>([])
 const layoutReady = ref(false)
 const privilegesUpdated = ref(false)
 
+const searchQuery = ref('')
+const searchOpen = ref(false)
+const highlightedIndex = ref(0)
+const searchInput = ref<HTMLInputElement | null>(null)
+
 function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
   layoutReady.value = true
@@ -47,23 +60,79 @@ onMounted(() => {
     }
     privilegesUpdated.value = true
   })
-  onUnmounted(stop)
+  const onKey = (event: KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      searchInput.value?.focus()
+    }
+  }
+  window.addEventListener('keydown', onKey)
+  onUnmounted(() => {
+    stop()
+    window.removeEventListener('keydown', onKey)
+  })
 })
 
 const navItems = computed(() => {
   const fromLayout = layoutRows.value.flatMap((row) =>
-    row.sections.map((section) => ({
-      id: section.id,
-      label: section.title,
-      href: `#${section.id}`,
-      icon: section.icon,
-      active: false,
-    })),
+    row.sections
+      .filter((section) => section.tiles.length > 0)
+      .map((section) => ({
+        id: section.id,
+        label: section.title,
+        href: `#${section.id}`,
+        icon: section.icon,
+        active: false,
+      })),
   )
   return [
     { id: 'home', label: 'Home', href: '#top', icon: 'hub-icon-home', active: true },
     ...fromLayout,
   ]
+})
+
+const visibleResources = computed((): SearchHit[] => {
+  const hits: SearchHit[] = []
+  for (const row of layoutRows.value) {
+    for (const section of row.sections) {
+      for (const tile of section.tiles) {
+        const privilege = getPrivilege(tile.identifier)
+        hits.push({
+          identifier: tile.identifier,
+          name: tile.name,
+          type: privilege?.privilegeTypeName || privilege?.privilegeTypeId || '',
+          icon: tile.icon,
+          url: tile.url,
+        })
+      }
+    }
+  }
+  return hits
+})
+
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) {
+    return visibleResources.value
+  }
+  return visibleResources.value.filter((hit) => {
+    return (
+      hit.name.toLowerCase().includes(query) ||
+      hit.type.toLowerCase().includes(query) ||
+      hit.identifier.toLowerCase().includes(query)
+    )
+  })
+})
+
+watch(searchResults, () => {
+  highlightedIndex.value = 0
+})
+
+watch(highlightedIndex, (index) => {
+  if (!searchOpen.value) {
+    return
+  }
+  document.getElementById(activeOptionId(index))?.scrollIntoView({ block: 'nearest' })
 })
 
 function tilesOf(section: LaunchpadSection): LaunchpadTile[] {
@@ -77,6 +146,71 @@ function tileHref(tile: LaunchpadTile): string | undefined {
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
+}
+
+function openSearch(): void {
+  searchOpen.value = true
+  highlightedIndex.value = 0
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+}
+
+function moveHighlight(delta: number): void {
+  const count = searchResults.value.length
+  if (count === 0) {
+    return
+  }
+  highlightedIndex.value = (highlightedIndex.value + delta + count) % count
+}
+
+function openResource(hit: SearchHit | undefined): void {
+  if (!hit?.url) {
+    return
+  }
+  window.open(hit.url, '_blank', 'noopener,noreferrer')
+  searchQuery.value = ''
+  closeSearch()
+  searchInput.value?.blur()
+}
+
+function onSearchKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    if (!searchOpen.value) {
+      openSearch()
+      return
+    }
+    moveHighlight(1)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    if (!searchOpen.value) {
+      openSearch()
+      return
+    }
+    moveHighlight(-1)
+    return
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (!searchOpen.value) {
+      openSearch()
+    }
+    openResource(searchResults.value[highlightedIndex.value])
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeSearch()
+    searchInput.value?.blur()
+  }
+}
+
+function activeOptionId(index: number): string {
+  return `search-option-${index}`
 }
 
 async function signOut(): Promise<void> {
@@ -130,17 +264,58 @@ async function signOut(): Promise<void> {
           <img class="brand-mark" src="/favicon.svg" alt="" />
           <p class="brand-name">Munero Hub</p>
         </div>
-        <label class="search">
+        <div class="search">
           <span class="search-icon" aria-hidden="true"></span>
-          <input type="search" placeholder="Search apps, policies and resources" @keydown.enter.prevent />
+          <input
+            ref="searchInput"
+            v-model="searchQuery"
+            type="search"
+            role="combobox"
+            placeholder="Search apps, policies and resources"
+            autocomplete="off"
+            aria-autocomplete="list"
+            :aria-expanded="searchOpen"
+            aria-controls="search-listbox"
+            :aria-activedescendant="searchOpen && searchResults.length ? activeOptionId(highlightedIndex) : undefined"
+            @focus="openSearch"
+            @input="openSearch"
+            @keydown="onSearchKeydown"
+            @blur="closeSearch"
+          />
           <kbd>⌘ K</kbd>
-        </label>
+          <ul
+            v-if="searchOpen"
+            id="search-listbox"
+            class="search-results"
+            role="listbox"
+            @mousedown.prevent
+          >
+            <li v-if="!searchResults.length" class="search-empty" role="presentation">No matches</li>
+            <li
+              v-for="(hit, index) in searchResults"
+              :id="activeOptionId(index)"
+              :key="hit.identifier"
+              role="option"
+              class="search-hit"
+              :class="{ active: index === highlightedIndex }"
+              :aria-selected="index === highlightedIndex"
+              @mouseenter="highlightedIndex = index"
+              @click="openResource(hit)"
+            >
+              <span v-if="hit.icon" class="tile-icon search-hit-icon" :class="hit.icon" aria-hidden="true"></span>
+              <span v-else class="tile-icon search-hit-icon letter-mark" aria-hidden="true">{{ letterMark(hit.name) }}</span>
+              <span class="search-hit-name">{{ hit.name }}</span>
+              <span class="search-hit-type">{{ hit.type }}</span>
+            </li>
+          </ul>
+        </div>
         <div class="top-actions">
           <button type="button" class="bell" aria-label="Notifications">
             <span class="bell-icon" aria-hidden="true"></span>
             <span class="badge">3</span>
           </button>
           <span class="avatar header-avatar" aria-hidden="true">{{ avatarLetter }}</span>
+          <button type="button" class="sign-out mobile-sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
         </div>
       </header>
 
@@ -151,18 +326,18 @@ async function signOut(): Promise<void> {
         </section>
 
         <div v-for="row in layoutRows" :key="row.row" class="grid-row">
-          <section
-            v-for="section in row.sections"
-            :id="section.id"
-            :key="section.id"
-            class="section"
-            :class="`layout-${section.layout}`"
-            :style="{
-              '--weight': String(section.weight),
-              '--col-start': String(section.columnStart),
-              backgroundColor: section.backgroundColor || undefined,
-            }"
-          >
+          <template v-for="section in row.sections" :key="section.id">
+            <section
+              v-if="tilesOf(section).length"
+              :id="section.id"
+              class="section"
+              :class="`layout-${section.layout}`"
+              :style="{
+                '--weight': String(section.weight),
+                '--col-start': String(section.columnStart),
+                backgroundColor: section.backgroundColor || undefined,
+              }"
+            >
             <header class="section-head">
               <h2>
                 <span v-if="section.icon" class="section-icon" :class="section.icon" aria-hidden="true"></span>
@@ -189,7 +364,6 @@ async function signOut(): Promise<void> {
                   <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
                 </span>
               </component>
-              <p v-if="!tilesOf(section).length" class="empty">No items</p>
             </div>
 
             <div v-else class="tile-grid" :class="{ 'tile-grid-detail': section.showDescription }">
@@ -209,9 +383,9 @@ async function signOut(): Promise<void> {
                 <strong>{{ tile.name }}</strong>
                 <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
               </component>
-              <p v-if="!tilesOf(section).length" class="empty">No items</p>
             </div>
           </section>
+          </template>
         </div>
       </div>
     </div>
@@ -228,6 +402,7 @@ async function signOut(): Promise<void> {
 <style scoped>
 .launchpad {
   min-height: 100vh;
+  min-width: 0;
   display: grid;
   grid-template-columns: 16.5rem minmax(0, 1fr);
   background: #f4f6f8;
@@ -444,6 +619,8 @@ async function signOut(): Promise<void> {
 }
 
 .search {
+  position: relative;
+  z-index: 6;
   flex: 1;
   display: flex;
   align-items: center;
@@ -481,6 +658,72 @@ kbd {
   border-radius: 0.35rem;
   color: #6b7380;
   font-size: 0.72rem;
+}
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 8;
+  margin: 0;
+  padding: 0.35rem;
+  max-height: min(22rem, 70vh);
+  overflow: auto;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e3e8ed;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 28px rgb(26 31 38 / 12%);
+}
+
+.search-empty {
+  padding: 0.7rem 0.75rem;
+  color: #6b7380;
+  font-size: 0.88rem;
+}
+
+.search-hit {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 0.55rem;
+  cursor: pointer;
+}
+
+.search-hit.active {
+  background: #fff1e6;
+}
+
+.search-hit-icon {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.search-hit-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.search-hit-type {
+  color: #6b7380;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.mobile-sign-out {
+  display: none;
+  grid-area: auto;
+  justify-self: auto;
+  font-size: 0.8rem;
 }
 
 .top-actions {
@@ -624,9 +867,15 @@ kbd {
 }
 
 .tile strong {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .tile-detail {
@@ -765,16 +1014,9 @@ kbd {
   background: #e06e14;
 }
 
-.empty {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: #6b7380;
-  font-size: 0.9rem;
-}
-
 @media (max-width: 960px) {
   .launchpad {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {
@@ -794,15 +1036,34 @@ kbd {
   }
 
   .topbar {
-    padding: 0.9rem 1rem 0.2rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem 0.75rem;
+    padding: max(0.9rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.2rem max(1rem, env(safe-area-inset-left));
+  }
+
+  .search {
+    grid-column: 1 / -1;
+    max-width: none;
+    margin: 0;
+    width: 100%;
   }
 
   .search kbd {
     display: none;
   }
 
+  .mobile-sign-out {
+    display: inline;
+  }
+
+  .greeting p {
+    display: none;
+  }
+
   .content {
-    padding: 0.5rem 1rem 2rem;
+    padding: 0.5rem max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   }
 
   .grid-row,
@@ -817,6 +1078,16 @@ kbd {
 
   .tile-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .tile {
+    min-height: 6.4rem;
+    padding: 0.75rem 0.35rem 0.6rem;
+  }
+
+  .tile strong {
+    font-size: 0.72rem;
   }
 
   .tile-grid-detail,

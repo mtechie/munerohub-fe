@@ -42,7 +42,7 @@ True if **all** of the ids are present. Empty argument list is false.
 
 ## Launchpad `metadata`
 
-`metadata.icon` is a CSS class on the tile. GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted.
+`metadata.icon` is a CSS class on the tile (`hub-icon-*` in [`src/launchpad/icons.css`](../src/launchpad/icons.css)). GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted. Section records may set `icon` the same way (drawn next to the section title).
 
 Layout comes from the `sections` array on `GET /privileges` (cached as `munero.hub.sections`). Each privilege only stores `metadata.sectionId`. `section.pin` is `'start' | 'end' | 'top' | 'bottom'`. A pinned section takes that edge; other sections flow around it. The launchpad keeps a snapshot of the grid and does not rebuild when the privilege or section cache changes until the user clicks **Refresh Now**.
 
@@ -76,7 +76,8 @@ Privilege `metadata`:
     "title": "My applications",
     "row": 1,
     "weight": 8,
-    "order": 1
+    "order": 1,
+    "icon": "hub-icon-apps"
   },
   {
     "id": "test-environments",
@@ -84,7 +85,9 @@ Privilege `metadata`:
     "row": 2,
     "weight": 12,
     "order": 1,
-    "pin": "bottom"
+    "pin": "bottom",
+    "icon": "hub-icon-beaker",
+    "backgroundColor": "#FFF9F1"
   }
 ]
 ```

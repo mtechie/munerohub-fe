@@ -20,6 +20,7 @@ export interface PrivilegeSection {
   row: number
   weight: number
   backgroundColor?: string
+  icon?: string
   order: number
   pin?: SectionPin
 }
@@ -88,6 +89,7 @@ function sectionFingerprint(items: PrivilegeSection[]): string {
   const normalized = items
     .map((item) => ({
       backgroundColor: item.backgroundColor ?? '',
+      icon: item.icon ?? '',
       id: item.id ?? '',
       order: item.order ?? 0,
       pin: item.pin ?? '',

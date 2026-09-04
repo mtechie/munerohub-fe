@@ -155,7 +155,10 @@ function stagingCaption(tile: LaunchpadTile): string {
             }"
           >
             <header class="section-head">
-              <h2>{{ section.title }}</h2>
+              <h2>
+                <span v-if="section.icon" class="section-icon" :class="section.icon" aria-hidden="true"></span>
+                {{ section.title }}
+              </h2>
               <a :href="`#${section.id}`">View all →</a>
             </header>
 
@@ -525,6 +528,8 @@ kbd {
   grid-column: var(--col-start, 1) / span var(--weight, 12);
   min-width: 0;
   scroll-margin-top: 1rem;
+  border-radius: 0.95rem;
+  padding: 0.15rem 0.15rem 0.25rem;
 }
 
 .variant-apps,
@@ -541,9 +546,21 @@ kbd {
 }
 
 .section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   margin: 0;
   font-size: 1.15rem;
   font-weight: 700;
+}
+
+.section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.3rem;
 }
 
 .section-head a {

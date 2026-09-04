@@ -17,6 +17,7 @@ export interface LaunchpadSection {
   weight: number
   columnStart: number
   backgroundColor?: string
+  icon?: string
   order: number
   pin?: SectionPin
   variant: 'apps' | 'staging'
@@ -41,6 +42,7 @@ export const APPS_SECTION: PrivilegeSection = {
   row: 1,
   weight: 8,
   order: 1,
+  icon: 'hub-icon-apps',
 }
 
 export const STAGING_SECTION: PrivilegeSection = {
@@ -49,6 +51,7 @@ export const STAGING_SECTION: PrivilegeSection = {
   row: 2,
   weight: 12,
   order: 1,
+  icon: 'hub-icon-beaker',
 }
 
 export const DEFAULT_TILE_ICONS: Record<string, string> = {
@@ -92,6 +95,7 @@ function resolveSection(privilege: Privilege, catalog: Map<string, PrivilegeSect
       row: Number(section.row) || (isStaging(tags) ? 2 : 1),
       weight: clampWeight(Number(section.weight) || (isStaging(tags) ? 12 : 8)),
       backgroundColor: section.backgroundColor,
+      icon: typeof section.icon === 'string' && section.icon.trim() ? section.icon.trim() : undefined,
       order: Number(section.order) || 1,
       pin: asPin(section.pin),
     }
@@ -294,6 +298,7 @@ export function collectLaunchpadRows(privileges: Privilege[], catalog: Privilege
       weight: clampWeight(resolved.weight),
       columnStart: 1,
       backgroundColor: resolved.backgroundColor,
+      icon: resolved.icon,
       order: Number(resolved.order) || 1,
       pin: resolved.pin,
       variant: 'apps',

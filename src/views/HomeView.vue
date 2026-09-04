@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { accessClaims, authorizationHeader, getAccessToken, logout, user } from '../auth/authStore'
+import { accessClaims, authBusy, authorizationHeader, getAccessToken, logout, user } from '../auth/authStore'
 import {
   fetchAndStorePrivileges,
   getPrivilege,
@@ -140,7 +140,7 @@ onMounted(() => {
       </div>
       <div class="header-actions">
         <RouterLink class="sign-out" to="/">Launchpad</RouterLink>
-        <button type="button" class="sign-out" @click="logout">Sign out</button>
+        <button type="button" class="sign-out" :disabled="authBusy" @click="logout">Sign out</button>
       </div>
     </header>
 

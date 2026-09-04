@@ -45,6 +45,9 @@ interface AuthState {
   expiresAt: number | null
   user: UserProfile | null
   accessClaims: AccessClaims | null
+  busy: boolean
+  busyMessage: string
+  busySticky: boolean
 }
 
 interface TokenEndpointPayload {
@@ -63,6 +66,9 @@ const state = reactive<AuthState>({
   expiresAt: null,
   user: null,
   accessClaims: null,
+  busy: false,
+  busyMessage: '',
+  busySticky: false,
 })
 
 let refreshInFlight: Promise<boolean> | null = null
@@ -80,6 +86,30 @@ export const isAuthenticated = computed(() => {
 
 export const user = computed(() => state.user)
 export const accessClaims = computed(() => state.accessClaims)
+export const authBusy = computed(() => state.busy)
+export const authBusyMessage = computed(() => state.busyMessage)
+
+export function setAuthBusy(message: string, options?: { sticky?: boolean }): void {
+  state.busy = true
+  state.busyMessage = message
+  if (options?.sticky) {
+    state.busySticky = true
+  }
+}
+
+export function clearAuthBusy(): void {
+  if (state.busySticky) {
+    return
+  }
+  state.busy = false
+  state.busyMessage = ''
+}
+
+export function releaseAuthBusy(): void {
+  state.busySticky = false
+  state.busy = false
+  state.busyMessage = ''
+}
 
 function readLocal(key: string): string | null {
   try {
@@ -356,14 +386,19 @@ export async function ensureAuthenticated(): Promise<boolean> {
     return true
   }
   if (state.refreshToken) {
-    const refreshed = await refreshTokens()
-    if (refreshed && !hasCachedPrivileges()) {
-      void fetchAndStorePrivileges(state.accessToken)
+    setAuthBusy('Loading…')
+    try {
+      const refreshed = await refreshTokens()
+      if (refreshed && !hasCachedPrivileges()) {
+        void fetchAndStorePrivileges(state.accessToken)
+      }
+      if (refreshed) {
+        beginPrivilegeSync()
+      }
+      return refreshed
+    } finally {
+      clearAuthBusy()
     }
-    if (refreshed) {
-      beginPrivilegeSync()
-    }
-    return refreshed
   }
   clearTokens()
   return false
@@ -390,70 +425,83 @@ export async function login(): Promise<void> {
   }
 
   loginInFlight = (async () => {
-    const verifier = randomString(64)
-    const stateValue = randomString(32)
-    writeSession(OAUTH_KEYS.pkceVerifier, verifier)
-    writeSession(OAUTH_KEYS.oauthState, stateValue)
-    writeLocal(pkceMapKey(stateValue), verifier)
+    setAuthBusy('Signing in…', { sticky: true })
+    try {
+      const verifier = randomString(64)
+      const stateValue = randomString(32)
+      writeSession(OAUTH_KEYS.pkceVerifier, verifier)
+      writeSession(OAUTH_KEYS.oauthState, stateValue)
+      writeLocal(pkceMapKey(stateValue), verifier)
 
-    const params = new URLSearchParams({
-      client_id: cognitoConfig.clientId,
-      response_type: 'code',
-      scope: cognitoConfig.scopes,
-      redirect_uri: cognitoConfig.redirectUri,
-      identity_provider: cognitoConfig.identityProvider,
-      state: stateValue,
-      code_challenge: await codeChallenge(verifier),
-      code_challenge_method: 'S256',
-    })
+      const params = new URLSearchParams({
+        client_id: cognitoConfig.clientId,
+        response_type: 'code',
+        scope: cognitoConfig.scopes,
+        redirect_uri: cognitoConfig.redirectUri,
+        identity_provider: cognitoConfig.identityProvider,
+        state: stateValue,
+        code_challenge: await codeChallenge(verifier),
+        code_challenge_method: 'S256',
+      })
 
-    window.location.assign(`${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`)
+      window.location.assign(`${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`)
+    } catch (error) {
+      releaseAuthBusy()
+      throw error
+    }
   })()
 
   return loginInFlight
 }
 
 export async function handleCallback(code: string, returnedState: string): Promise<void> {
-  const sessionState = readSession(OAUTH_KEYS.oauthState)
-  const sessionVerifier = readSession(OAUTH_KEYS.pkceVerifier)
-  removeSession(OAUTH_KEYS.oauthState)
-  removeSession(OAUTH_KEYS.pkceVerifier)
+  setAuthBusy('Signing in…', { sticky: true })
+  try {
+    const sessionState = readSession(OAUTH_KEYS.oauthState)
+    const sessionVerifier = readSession(OAUTH_KEYS.pkceVerifier)
+    removeSession(OAUTH_KEYS.oauthState)
+    removeSession(OAUTH_KEYS.pkceVerifier)
 
-  const verifier =
-    sessionState === returnedState && sessionVerifier
-      ? sessionVerifier
-      : readLocal(pkceMapKey(returnedState))
-  removeLocal(pkceMapKey(returnedState))
+    const verifier =
+      sessionState === returnedState && sessionVerifier
+        ? sessionVerifier
+        : readLocal(pkceMapKey(returnedState))
+    removeLocal(pkceMapKey(returnedState))
 
-  if (!verifier) {
-    throw new Error('Sign-in state mismatch. Please try again.')
+    if (!verifier) {
+      throw new Error('Sign-in state mismatch. Please try again.')
+    }
+
+    const { ok, payload } = await postToken(
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: cognitoConfig.clientId,
+        code,
+        redirect_uri: cognitoConfig.redirectUri,
+        code_verifier: verifier,
+      }),
+    )
+
+    if (!ok || !payload.access_token || !payload.id_token) {
+      throw new Error(payload.error_description || payload.error || 'Token exchange failed')
+    }
+
+    persistTokens({
+      accessToken: payload.access_token,
+      idToken: payload.id_token,
+      refreshToken: payload.refresh_token ?? null,
+      expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
+    })
+    await fetchAndStorePrivileges(payload.access_token)
+    beginPrivilegeSync()
+  } catch (error) {
+    releaseAuthBusy()
+    throw error
   }
-
-  const { ok, payload } = await postToken(
-    new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: cognitoConfig.clientId,
-      code,
-      redirect_uri: cognitoConfig.redirectUri,
-      code_verifier: verifier,
-    }),
-  )
-
-  if (!ok || !payload.access_token || !payload.id_token) {
-    throw new Error(payload.error_description || payload.error || 'Token exchange failed')
-  }
-
-  persistTokens({
-    accessToken: payload.access_token,
-    idToken: payload.id_token,
-    refreshToken: payload.refresh_token ?? null,
-    expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
-  })
-  await fetchAndStorePrivileges(payload.access_token)
-  beginPrivilegeSync()
 }
 
 export async function logout(): Promise<void> {
+  setAuthBusy('Signing out…', { sticky: true })
   const refreshToken = state.refreshToken
   if (refreshToken) {
     try {

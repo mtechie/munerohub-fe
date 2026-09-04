@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { logout, user } from '../auth/authStore'
+import { authBusy, isAuthenticated, logout, user } from '../auth/authStore'
 import { onPrivilegesChanged, privileges, sections } from '../auth/privileges'
 import {
   collectLaunchpadRows,
@@ -38,6 +38,9 @@ function applyLayout(): void {
 onMounted(() => {
   applyLayout()
   const stop = onPrivilegesChanged(() => {
+    if (authBusy.value || !isAuthenticated.value) {
+      return
+    }
     if (!layoutReady.value || layoutRows.value.length === 0) {
       applyLayout()
       return
@@ -74,6 +77,10 @@ function tileHref(tile: LaunchpadTile): string | undefined {
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
+}
+
+async function signOut(): Promise<void> {
+  await logout()
 }
 </script>
 
@@ -112,7 +119,7 @@ function letterMark(name: string): string {
             <strong>{{ displayName }}</strong>
             <small v-if="displayEmail">{{ displayEmail }}</small>
           </span>
-          <button type="button" class="sign-out" @click="logout">Sign out</button>
+          <button type="button" class="sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
         </div>
       </div>
     </aside>
@@ -209,7 +216,7 @@ function letterMark(name: string): string {
       </div>
     </div>
 
-    <div v-if="privilegesUpdated" class="privilege-gate" role="dialog" aria-modal="true" aria-labelledby="privilege-gate-title">
+    <div v-if="privilegesUpdated && !authBusy && isAuthenticated" class="privilege-gate" role="dialog" aria-modal="true" aria-labelledby="privilege-gate-title">
       <div class="privilege-gate-card">
         <p id="privilege-gate-title">Your privileges were updated</p>
         <button type="button" @click="applyLayout">Refresh Now</button>
@@ -401,6 +408,11 @@ function letterMark(name: string): string {
 
 .sign-out:hover {
   color: #1a1f26;
+}
+
+.sign-out:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .avatar {

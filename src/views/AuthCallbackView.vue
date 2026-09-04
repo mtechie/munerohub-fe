@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureAuthenticated, handleCallback } from '../auth/authStore'
+import { ensureAuthenticated, handleCallback, releaseAuthBusy } from '../auth/authStore'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,9 +31,11 @@ onMounted(async () => {
   try {
     await handleCallback(code, state)
     await router.replace({ name: 'home' })
+    releaseAuthBusy()
   } catch (error) {
     if (await ensureAuthenticated()) {
       await router.replace({ name: 'home' })
+      releaseAuthBusy()
       return
     }
     errorMessage.value = error instanceof Error ? error.message : 'Sign-in failed.'
@@ -44,7 +46,6 @@ onMounted(async () => {
 <template>
   <main class="callback">
     <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <p v-else>Signing you in…</p>
   </main>
 </template>
 

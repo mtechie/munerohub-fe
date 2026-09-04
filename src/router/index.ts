@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { ensureAuthenticated, login } from '../auth/authStore'
+import { ensureAuthenticated, login, setAuthBusy } from '../auth/authStore'
 import HomeView from '../views/HomeView.vue'
 import LaunchpadView from '../views/LaunchpadView.vue'
 import LandingView from '../views/LandingView.vue'
@@ -48,6 +48,7 @@ router.beforeEach(async (to) => {
     return true
   }
 
+  setAuthBusy('Signing in…', { sticky: true })
   await login()
   return false
 })

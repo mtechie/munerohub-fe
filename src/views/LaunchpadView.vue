@@ -47,11 +47,21 @@ onMounted(() => {
   onUnmounted(stop)
 })
 
-const navItems: Array<{ id: string; label: string; href: string; icon: string; active?: boolean }> = [
-  { id: 'home', label: 'Home', href: '#top', icon: 'home', active: true },
-  { id: 'applications', label: 'Applications', href: '#my-applications', icon: 'apps' },
-  { id: 'test-environments', label: 'Test Environments', href: '#test-environments', icon: 'beaker' },
-]
+const navItems = computed(() => {
+  const fromLayout = layoutRows.value.flatMap((row) =>
+    row.sections.map((section) => ({
+      id: section.id,
+      label: section.title,
+      href: `#${section.id}`,
+      icon: section.icon,
+      active: false,
+    })),
+  )
+  return [
+    { id: 'home', label: 'Home', href: '#top', icon: 'hub-icon-home', active: true },
+    ...fromLayout,
+  ]
+})
 
 function tilesOf(section: LaunchpadSection): LaunchpadTile[] {
   return section.tiles
@@ -64,14 +74,6 @@ function tileHref(tile: LaunchpadTile): string | undefined {
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
-}
-
-function isStagingTag(tags: string[]): boolean {
-  return tags.some((tag) => tag.toUpperCase() === 'STAGING')
-}
-
-function stagingCaption(tile: LaunchpadTile): string {
-  return tile.description || 'Staging environment'
 }
 </script>
 
@@ -91,7 +93,7 @@ function stagingCaption(tile: LaunchpadTile): string {
           class="nav-item"
           :class="{ active: item.active }"
         >
-          <span class="nav-icon" :data-icon="item.icon" aria-hidden="true"></span>
+          <span class="nav-icon" :class="item.icon" aria-hidden="true"></span>
           {{ item.label }}
         </a>
       </nav>
@@ -147,7 +149,7 @@ function stagingCaption(tile: LaunchpadTile): string {
             :id="section.id"
             :key="section.id"
             class="section"
-            :class="`variant-${section.variant}`"
+            :class="`layout-${section.layout}`"
             :style="{
               '--weight': String(section.weight),
               '--col-start': String(section.columnStart),
@@ -162,38 +164,45 @@ function stagingCaption(tile: LaunchpadTile): string {
               <a :href="`#${section.id}`">View all →</a>
             </header>
 
-            <div v-if="section.variant === 'staging'" class="staging-grid">
+            <div v-if="section.layout === 'list'" class="tile-list">
               <component
                 :is="tileHref(tile) ? 'a' : 'div'"
                 v-for="tile in tilesOf(section)"
                 :key="tile.identifier"
-                class="staging-card"
+                class="list-item"
                 v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
               >
-                <span v-if="isStagingTag(tile.tags) || section.variant === 'staging'" class="staging-tag">
-                  STAGING
+                <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
+                <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
+                <span class="list-copy">
+                  <strong>{{ tile.name }}</strong>
+                  <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
                 </span>
-                <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                <strong>{{ tile.name }}</strong>
-                <small>{{ stagingCaption(tile) }}</small>
+                <span v-if="section.showTags && tile.tags.length" class="tile-tags">
+                  <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
+                </span>
               </component>
-              <p v-if="!tilesOf(section).length" class="empty">No test environments assigned.</p>
+              <p v-if="!tilesOf(section).length" class="empty">No items</p>
             </div>
 
-            <div v-else class="apps-grid">
+            <div v-else class="tile-grid" :class="{ 'tile-grid-detail': section.showDescription }">
               <component
                 :is="tileHref(tile) ? 'a' : 'div'"
                 v-for="tile in tilesOf(section)"
                 :key="tile.identifier"
-                class="app-tile"
+                class="tile"
+                :class="{ 'tile-detail': section.showDescription }"
                 v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
               >
-                <span v-if="tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                <span v-else class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                <span class="app-name">{{ tile.name }}</span>
+                <span v-if="section.showTags && tile.tags.length" class="tile-tags">
+                  <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
+                </span>
+                <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
+                <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
+                <strong>{{ tile.name }}</strong>
+                <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
               </component>
-              <p v-if="!tilesOf(section).length" class="empty">No applications assigned.</p>
+              <p v-if="!tilesOf(section).length" class="empty">No items</p>
             </div>
           </section>
         </div>
@@ -281,28 +290,30 @@ function stagingCaption(tile: LaunchpadTile): string {
 .search-icon,
 .bell-icon,
 .m365-mark {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.15rem;
   height: 1.15rem;
   flex: 0 0 1.15rem;
+}
+
+.search-icon,
+.bell-icon,
+.m365-mark {
   background: currentColor;
   -webkit-mask: center / contain no-repeat;
   mask: center / contain no-repeat;
 }
 
-.nav-icon[data-icon='home'] {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z'/></svg>");
+.nav-icon[class*='hub-icon-'] {
+  background: transparent;
+  color: inherit;
 }
 
-.nav-icon[data-icon='apps'] {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><rect x='4' y='4' width='6' height='6' rx='1'/><rect x='14' y='4' width='6' height='6' rx='1'/><rect x='4' y='14' width='6' height='6' rx='1'/><rect x='14' y='14' width='6' height='6' rx='1'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><rect x='4' y='4' width='6' height='6' rx='1'/><rect x='14' y='4' width='6' height='6' rx='1'/><rect x='4' y='14' width='6' height='6' rx='1'/><rect x='14' y='14' width='6' height='6' rx='1'/></svg>");
-}
-
-.nav-icon[data-icon='beaker'] {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M9 3.5h6M10 3.5v5.2L5.6 19.2A1.6 1.6 0 0 0 7 21.5h10a1.6 1.6 0 0 0 1.4-2.3L14 8.7V3.5'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M9 3.5h6M10 3.5v5.2L5.6 19.2A1.6 1.6 0 0 0 7 21.5h10a1.6 1.6 0 0 0 1.4-2.3L14 8.7V3.5'/></svg>");
+.nav-icon[class*='hub-icon-']::before {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .sidebar-foot {
@@ -529,12 +540,7 @@ kbd {
   min-width: 0;
   scroll-margin-top: 1rem;
   border-radius: 0.95rem;
-  padding: 0.15rem 0.15rem 0.25rem;
-}
-
-.variant-apps,
-.variant-staging {
-  background: transparent;
+  padding: 1rem 1.1rem 1.15rem;
 }
 
 .section-head {
@@ -573,14 +579,19 @@ kbd {
   color: #1a1f26;
 }
 
-.apps-grid {
+.tile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(6.6rem, 1fr));
   gap: 0.75rem;
 }
 
-.app-tile,
-.staging-card {
+.tile-grid-detail {
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.85rem;
+}
+
+.tile,
+.list-item {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -594,16 +605,33 @@ kbd {
   text-decoration: none;
 }
 
-.app-tile {
+.tile {
   min-height: 7.1rem;
   padding: 1rem 0.55rem 0.85rem;
   text-align: center;
 }
 
-.app-name {
+.tile strong {
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.25;
+}
+
+.tile-detail {
+  align-items: flex-start;
+  min-height: 8.2rem;
+  padding: 1rem 1rem 0.9rem;
+  text-align: left;
+}
+
+.tile-detail strong {
+  font-size: 0.92rem;
+}
+
+.tile-detail small,
+.list-copy small {
+  color: #6b7380;
+  font-size: 0.78rem;
 }
 
 .tile-icon {
@@ -622,31 +650,19 @@ kbd {
   font-weight: 750;
 }
 
-.staging-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.85rem;
+.tile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
-.staging-card {
-  align-items: flex-start;
-  min-height: 8.2rem;
-  padding: 1rem 1rem 0.9rem;
-}
-
-.staging-card strong {
-  font-size: 0.92rem;
-}
-
-.staging-card small {
-  color: #6b7380;
-  font-size: 0.78rem;
-}
-
-.staging-tag {
+.tile-detail .tile-tags {
   position: absolute;
   top: 0.7rem;
   right: 0.7rem;
+}
+
+.tile-tag {
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
   background: #fde4d0;
@@ -654,6 +670,45 @@ kbd {
   font-size: 0.62rem;
   font-weight: 750;
   letter-spacing: 0.04em;
+}
+
+.tile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.list-item {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+}
+
+.list-item::after {
+  content: '›';
+  margin-left: auto;
+  color: #9aa3ad;
+  font-size: 1.1rem;
+}
+
+.list-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.list-copy strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.list-item .tile-icon {
+  width: 2rem;
+  height: 2rem;
 }
 
 .privilege-gate {
@@ -748,11 +803,12 @@ kbd {
     margin-top: 1.15rem;
   }
 
-  .apps-grid {
+  .tile-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .staging-grid {
+  .tile-grid-detail,
+  .tile-list {
     grid-template-columns: 1fr;
   }
 }

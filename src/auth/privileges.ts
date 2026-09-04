@@ -13,6 +13,7 @@ const LOCK_TTL_MS = 15_000
 const TAB_ID = crypto.randomUUID()
 
 export type SectionPin = 'start' | 'end' | 'top' | 'bottom'
+export type SectionLayout = 'grid' | 'list'
 
 export interface PrivilegeSection {
   id: string
@@ -23,6 +24,10 @@ export interface PrivilegeSection {
   icon?: string
   order: number
   pin?: SectionPin
+  layout?: SectionLayout
+  showIcon?: boolean
+  showTags?: boolean
+  showDescription?: boolean
 }
 
 export interface Privilege {
@@ -91,9 +96,13 @@ function sectionFingerprint(items: PrivilegeSection[]): string {
       backgroundColor: item.backgroundColor ?? '',
       icon: item.icon ?? '',
       id: item.id ?? '',
+      layout: item.layout ?? 'grid',
       order: item.order ?? 0,
       pin: item.pin ?? '',
       row: item.row ?? 0,
+      showDescription: item.showDescription ?? false,
+      showIcon: item.showIcon ?? true,
+      showTags: item.showTags ?? false,
       title: item.title ?? '',
       weight: item.weight ?? 0,
     }))

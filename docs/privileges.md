@@ -42,9 +42,17 @@ True if **all** of the ids are present. Empty argument list is false.
 
 ## Launchpad `metadata`
 
-`metadata.icon` is a CSS class on the tile (`hub-icon-*` in [`src/launchpad/icons.css`](../src/launchpad/icons.css)). GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted. Section records may set `icon` the same way (drawn next to the section title).
+`metadata.icon` is a CSS class on the tile (`hub-icon-*` in [`src/launchpad/icons.css`](../src/launchpad/icons.css)). If omitted, the tile shows a letter mark. Section records may set `icon` the same way (drawn next to the section title).
 
-Layout comes from the `sections` array on `GET /privileges` (cached as `munero.hub.sections`). Each privilege only stores `metadata.sectionId`. `section.pin` is `'start' | 'end' | 'top' | 'bottom'`. A pinned section takes that edge; other sections flow around it. The launchpad keeps a snapshot of the grid and does not rebuild when the privilege or section cache changes until the user clicks **Refresh Now**.
+Layout comes from the `sections` array on `GET /privileges` (cached as `munero.hub.sections`). Each privilege only stores `metadata.sectionId`. Privileges without a matching catalog `sectionId` are not shown.
+
+Section specs:
+
+- `pin`: `'start' | 'end' | 'top' | 'bottom'`
+- `layout`: `'grid'` (default) or `'list'`
+- `showIcon` (default true), `showTags` (default false), `showDescription` (default false)
+
+The launchpad keeps a snapshot of the grid and does not rebuild when the privilege or section cache changes until the user clicks **Refresh Now**.
 
 Privilege `metadata`:
 
@@ -60,7 +68,7 @@ Privilege `metadata`:
 ```json
 {
   "url": "https://pxm-staging.munero.net",
-  "icon": "hub-icon-pxm",
+  "icon": "hub-icon-people",
   "order": 1,
   "tags": ["STAGING"],
   "sectionId": "test-environments"
@@ -77,7 +85,11 @@ Privilege `metadata`:
     "row": 1,
     "weight": 8,
     "order": 1,
-    "icon": "hub-icon-apps"
+    "icon": "hub-icon-apps",
+    "layout": "grid",
+    "showIcon": true,
+    "showTags": false,
+    "showDescription": false
   },
   {
     "id": "test-environments",
@@ -87,7 +99,24 @@ Privilege `metadata`:
     "order": 1,
     "pin": "bottom",
     "icon": "hub-icon-beaker",
-    "backgroundColor": "#FFF9F1"
+    "backgroundColor": "#FFF9F1",
+    "layout": "grid",
+    "showIcon": true,
+    "showTags": true,
+    "showDescription": true
+  },
+  {
+    "id": "policies",
+    "title": "Policies",
+    "row": 1,
+    "weight": 4,
+    "order": 2,
+    "pin": "end",
+    "icon": "hub-icon-document",
+    "layout": "list",
+    "showIcon": false,
+    "showTags": false,
+    "showDescription": false
   }
 ]
 ```

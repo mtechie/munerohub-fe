@@ -1,4 +1,4 @@
-import type { Privilege, PrivilegeSection, SectionPin } from '../auth/privileges'
+import type { Privilege, PrivilegeSection, SectionLayout, SectionPin } from '../auth/privileges'
 
 export interface LaunchpadTile {
   identifier: string
@@ -20,7 +20,10 @@ export interface LaunchpadSection {
   icon?: string
   order: number
   pin?: SectionPin
-  variant: 'apps' | 'staging'
+  layout: SectionLayout
+  showIcon: boolean
+  showTags: boolean
+  showDescription: boolean
   tiles: LaunchpadTile[]
 }
 
@@ -34,29 +37,6 @@ type WorkingSection = LaunchpadSection & { metadataRow: number }
 interface RowBucket {
   occupied: boolean[]
   sections: WorkingSection[]
-}
-
-export const APPS_SECTION: PrivilegeSection = {
-  id: 'my-applications',
-  title: 'My applications',
-  row: 1,
-  weight: 8,
-  order: 1,
-  icon: 'hub-icon-apps',
-}
-
-export const STAGING_SECTION: PrivilegeSection = {
-  id: 'test-environments',
-  title: 'Test Environments',
-  row: 2,
-  weight: 12,
-  order: 1,
-  icon: 'hub-icon-beaker',
-}
-
-export const DEFAULT_TILE_ICONS: Record<string, string> = {
-  GIFTLOV: 'hub-icon-giftlov',
-  PXM: 'hub-icon-pxm',
 }
 
 function asTags(value: unknown): string[] {
@@ -80,27 +60,34 @@ function clampWeight(weight: number): number {
   return Math.min(12, Math.max(1, Math.round(weight)))
 }
 
-function isStaging(tags: string[]): boolean {
-  return tags.some((tag) => tag.toUpperCase() === 'STAGING')
+function asLayout(value: unknown): SectionLayout {
+  return value === 'list' ? 'list' : 'grid'
 }
 
-function resolveSection(privilege: Privilege, catalog: Map<string, PrivilegeSection>): PrivilegeSection {
-  const tags = asTags(privilege.metadata?.tags)
+function asBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function resolveSection(privilege: Privilege, catalog: Map<string, PrivilegeSection>): PrivilegeSection | null {
   const sectionId = privilege.metadata?.sectionId
   const section = typeof sectionId === 'string' && sectionId.length > 0 ? catalog.get(sectionId) : undefined
-  if (section) {
-    return {
-      id: section.id,
-      title: section.title || section.id,
-      row: Number(section.row) || (isStaging(tags) ? 2 : 1),
-      weight: clampWeight(Number(section.weight) || (isStaging(tags) ? 12 : 8)),
-      backgroundColor: section.backgroundColor,
-      icon: typeof section.icon === 'string' && section.icon.trim() ? section.icon.trim() : undefined,
-      order: Number(section.order) || 1,
-      pin: asPin(section.pin),
-    }
+  if (!section) {
+    return null
   }
-  return isStaging(tags) ? { ...STAGING_SECTION } : { ...APPS_SECTION }
+  return {
+    id: section.id,
+    title: section.title || section.id,
+    row: Number(section.row) || 1,
+    weight: clampWeight(Number(section.weight) || 12),
+    backgroundColor: section.backgroundColor,
+    icon: typeof section.icon === 'string' && section.icon.trim() ? section.icon.trim() : undefined,
+    order: Number(section.order) || 1,
+    pin: asPin(section.pin),
+    layout: asLayout(section.layout),
+    showIcon: asBool(section.showIcon, true),
+    showTags: asBool(section.showTags, false),
+    showDescription: asBool(section.showDescription, false),
+  }
 }
 
 function toTile(privilege: Privilege): LaunchpadTile | null {
@@ -116,14 +103,10 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
     name,
     description: privilege.description || '',
     url: typeof url === 'string' && url.length > 0 ? url : undefined,
-    icon: icon || DEFAULT_TILE_ICONS[identifier],
+    icon: icon || undefined,
     order: Number(privilege.metadata?.order) || 0,
     tags: asTags(privilege.metadata?.tags),
   }
-}
-
-function sectionVariant(section: PrivilegeSection): LaunchpadSection['variant'] {
-  return section.id === STAGING_SECTION.id ? 'staging' : 'apps'
 }
 
 function byOrder(a: WorkingSection, b: WorkingSection): number {
@@ -285,6 +268,9 @@ export function collectLaunchpadRows(privileges: Privilege[], catalog: Privilege
       continue
     }
     const resolved = resolveSection(privilege, byId)
+    if (!resolved) {
+      continue
+    }
     const existing = sections.get(resolved.id)
     if (existing) {
       existing.tiles.push(tile)
@@ -301,14 +287,16 @@ export function collectLaunchpadRows(privileges: Privilege[], catalog: Privilege
       icon: resolved.icon,
       order: Number(resolved.order) || 1,
       pin: resolved.pin,
-      variant: 'apps',
+      layout: resolved.layout || 'grid',
+      showIcon: resolved.showIcon !== false,
+      showTags: Boolean(resolved.showTags),
+      showDescription: Boolean(resolved.showDescription),
       tiles: [tile],
     })
   }
 
   for (const section of sections.values()) {
     section.tiles.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-    section.variant = sectionVariant(section)
   }
 
   const collected = [...sections.values()]

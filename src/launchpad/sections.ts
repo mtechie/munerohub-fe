@@ -6,6 +6,8 @@ export interface LaunchpadTile {
   description: string
   url?: string
   icon?: string
+  iconColor?: string
+  textColor?: string
   order: number
   tags: string[]
 }
@@ -37,6 +39,14 @@ type WorkingSection = LaunchpadSection & { metadataRow: number }
 interface RowBucket {
   occupied: boolean[]
   sections: WorkingSection[]
+}
+
+function asColor(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const color = value.trim()
+  return color.length > 0 ? color : undefined
 }
 
 function asTags(value: unknown): string[] {
@@ -104,6 +114,8 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
     description: privilege.description || '',
     url: typeof url === 'string' && url.length > 0 ? url : undefined,
     icon: icon || undefined,
+    iconColor: asColor(privilege.metadata?.iconColor),
+    textColor: asColor(privilege.metadata?.textColor),
     order: Number(privilege.metadata?.order) || 0,
     tags: asTags(privilege.metadata?.tags),
   }

@@ -42,7 +42,7 @@ True if **all** of the ids are present. Empty argument list is false.
 
 ## Launchpad `metadata`
 
-`metadata.icon` is a CSS class on the tile (`hub-icon-*` in [`src/launchpad/icons.css`](../src/launchpad/icons.css)). If omitted, the tile shows a letter mark. Section records may set `icon` the same way (drawn next to the section title).
+`metadata.icon` is a CSS class on the tile (`hub-icon-*` in [`src/launchpad/icons.css`](../src/launchpad/icons.css)). If omitted, the tile shows a letter mark. Optional `iconColor` and `textColor` are CSS colors for the icon (or letter mark) and the tile name. Section records may set `icon` the same way (drawn next to the section title).
 
 Layout comes from the `sections` array on `GET /privileges` (cached as `munero.hub.sections`). Each privilege only stores `metadata.sectionId`. Privileges without a matching catalog `sectionId` are not shown.
 
@@ -60,6 +60,8 @@ Privilege `metadata`:
 {
   "url": "https://giftlov.munero.net",
   "icon": "hub-icon-giftlov",
+  "iconColor": "#C62828",
+  "textColor": "#8A1F1F",
   "order": 2,
   "sectionId": "my-applications"
 }

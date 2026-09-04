@@ -40,6 +40,8 @@ export interface Privilege {
   metadata?: {
     url?: string
     icon?: string
+    iconColor?: string
+    textColor?: string
     order?: number
     tags?: string[]
     sectionId?: string

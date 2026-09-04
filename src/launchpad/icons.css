@@ -10,7 +10,7 @@
 
 .tile-icon[class*='hub-icon-'] {
   background: #fff4e8;
-  color: #d96b16;
+  color: var(--tile-icon-color, #d96b16);
 }
 
 .section-icon[class*='hub-icon-'] {

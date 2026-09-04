@@ -15,6 +15,8 @@ interface SearchHit {
   name: string
   type: string
   icon?: string
+  iconColor?: string
+  textColor?: string
   url?: string
 }
 
@@ -102,6 +104,8 @@ const visibleResources = computed((): SearchHit[] => {
           name: tile.name,
           type: privilege?.privilegeTypeName || privilege?.privilegeTypeId || '',
           icon: tile.icon,
+          iconColor: tile.iconColor,
+          textColor: tile.textColor,
           url: tile.url,
         })
       }
@@ -146,6 +150,17 @@ function tileHref(tile: LaunchpadTile): string | undefined {
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
+}
+
+function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<string, string> {
+  const style: Record<string, string> = {}
+  if (tile.iconColor) {
+    style['--tile-icon-color'] = tile.iconColor
+  }
+  if (tile.textColor) {
+    style['--tile-text-color'] = tile.textColor
+  }
+  return style
 }
 
 function openSearch(): void {
@@ -298,6 +313,7 @@ async function signOut(): Promise<void> {
               role="option"
               class="search-hit"
               :class="{ active: index === highlightedIndex }"
+              :style="tileChrome(hit)"
               :aria-selected="index === highlightedIndex"
               @mouseenter="highlightedIndex = index"
               @click="openResource(hit)"
@@ -352,6 +368,7 @@ async function signOut(): Promise<void> {
                 v-for="tile in tilesOf(section)"
                 :key="tile.identifier"
                 class="list-item"
+                :style="tileChrome(tile)"
                 v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
               >
                 <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
@@ -373,6 +390,7 @@ async function signOut(): Promise<void> {
                 :key="tile.identifier"
                 class="tile"
                 :class="{ 'tile-detail': section.showDescription }"
+                :style="tileChrome(tile)"
                 v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
               >
                 <span v-if="section.showTags && tile.tags.length" class="tile-tags">
@@ -709,6 +727,7 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--tile-text-color, inherit);
   font-size: 0.9rem;
   font-weight: 600;
 }
@@ -870,6 +889,7 @@ kbd {
   display: -webkit-box;
   min-width: 0;
   overflow: hidden;
+  color: var(--tile-text-color, inherit);
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.25;
@@ -906,7 +926,7 @@ kbd {
 
 .letter-mark {
   background: #eef3f8;
-  color: #3d5a80;
+  color: var(--tile-icon-color, #3d5a80);
   font-size: 0.95rem;
   font-weight: 750;
 }
@@ -963,6 +983,7 @@ kbd {
 }
 
 .list-copy strong {
+  color: var(--tile-text-color, inherit);
   font-size: 0.88rem;
   font-weight: 600;
 }

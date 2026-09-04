@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue'
 
 export const PRIVILEGES_KEY = 'munero.hub.privileges'
+export const SECTIONS_KEY = 'munero.hub.sections'
 
 const SYNC_INTERVAL_KEY = 'munero.hub.privileges_sync_interval'
 const SYNCED_AT_KEY = 'munero.hub.privileges_synced_at'
@@ -35,13 +36,17 @@ export interface Privilege {
     icon?: string
     order?: number
     tags?: string[]
-    section?: PrivilegeSection
+    sectionId?: string
   }
 }
 
-const privilegesState = reactive({ items: [] as Privilege[] })
+const privilegesState = reactive({
+  items: [] as Privilege[],
+  sections: [] as PrivilegeSection[],
+})
 
 export const privileges = computed(() => privilegesState.items)
+export const sections = computed(() => privilegesState.sections)
 
 export type PrivilegesChangedListener = (items: Privilege[]) => void
 
@@ -77,6 +82,34 @@ function privilegeFingerprint(items: Privilege[]): string {
 
 function privilegesEqual(left: Privilege[], right: Privilege[]): boolean {
   return privilegeFingerprint(left) === privilegeFingerprint(right)
+}
+
+function sectionFingerprint(items: PrivilegeSection[]): string {
+  const normalized = items
+    .map((item) => ({
+      backgroundColor: item.backgroundColor ?? '',
+      id: item.id ?? '',
+      order: item.order ?? 0,
+      pin: item.pin ?? '',
+      row: item.row ?? 0,
+      title: item.title ?? '',
+      weight: item.weight ?? 0,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  return JSON.stringify(normalized)
+}
+
+function sectionsEqual(left: PrivilegeSection[], right: PrivilegeSection[]): boolean {
+  return sectionFingerprint(left) === sectionFingerprint(right)
+}
+
+function asSectionList(value: unknown): PrivilegeSection[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((item): item is PrivilegeSection => {
+    return Boolean(item && typeof item === 'object' && typeof (item as PrivilegeSection).id === 'string')
+  })
 }
 
 let syncTimer: number | null = null
@@ -124,25 +157,31 @@ function markSynced(): void {
   writeLocal(SYNCED_AT_KEY, String(Date.now()))
 }
 
-function persist(items: Privilege[]): boolean {
-  if (privilegesEqual(privilegesState.items, items)) {
+function persist(items: Privilege[], nextSections?: PrivilegeSection[]): boolean {
+  const sectionList = nextSections ?? privilegesState.sections
+  if (privilegesEqual(privilegesState.items, items) && sectionsEqual(privilegesState.sections, sectionList)) {
     return false
   }
   privilegesState.items = items
+  privilegesState.sections = sectionList
   writeLocal(PRIVILEGES_KEY, JSON.stringify(items))
+  writeLocal(SECTIONS_KEY, JSON.stringify(sectionList))
   emitPrivilegesChanged(items)
   return true
 }
 
-function parsePrivilegesBody(body: unknown): { items: Privilege[]; syncIntervalSeconds?: number } | null {
+function parsePrivilegesBody(
+  body: unknown,
+): { items: Privilege[]; sections: PrivilegeSection[]; syncIntervalSeconds?: number } | null {
   if (Array.isArray(body)) {
-    return { items: body as Privilege[] }
+    return { items: body as Privilege[], sections: [] }
   }
   if (body && typeof body === 'object' && Array.isArray((body as { privileges?: unknown }).privileges)) {
-    const payload = body as { privileges: Privilege[]; syncIntervalSeconds?: unknown }
+    const payload = body as { privileges: Privilege[]; sections?: unknown; syncIntervalSeconds?: unknown }
     const interval = Number(payload.syncIntervalSeconds)
     return {
       items: payload.privileges,
+      sections: asSectionList(payload.sections),
       syncIntervalSeconds: Number.isFinite(interval) ? clampInterval(interval) : undefined,
     }
   }
@@ -155,16 +194,18 @@ export function hasCachedPrivileges(): boolean {
 
 export function hydratePrivileges(): void {
   const raw = readLocal(PRIVILEGES_KEY)
-  if (raw === null) {
-    persist([])
+  const sectionRaw = readLocal(SECTIONS_KEY)
+  if (raw === null && sectionRaw === null) {
+    persist([], [])
     return
   }
 
   try {
-    const parsed = JSON.parse(raw) as unknown
-    persist(Array.isArray(parsed) ? (parsed as Privilege[]) : [])
+    const parsed = raw === null ? [] : (JSON.parse(raw) as unknown)
+    const parsedSections = sectionRaw === null ? [] : (JSON.parse(sectionRaw) as unknown)
+    persist(Array.isArray(parsed) ? (parsed as Privilege[]) : [], asSectionList(parsedSections))
   } catch {
-    persist([])
+    persist([], [])
   }
 }
 
@@ -182,8 +223,9 @@ export function stopPrivilegeSync(): void {
 
 export function clearPrivileges(): void {
   stopPrivilegeSync()
-  persist([])
+  persist([], [])
   removeLocal(PRIVILEGES_KEY)
+  removeLocal(SECTIONS_KEY)
   removeLocal(SYNC_INTERVAL_KEY)
   removeLocal(SYNCED_AT_KEY)
   removeLocal(LOCK_KEY)
@@ -221,7 +263,7 @@ export async function fetchAndStorePrivileges(
   const failOpen = options?.failOpen !== false
   if (!accessToken) {
     if (failOpen) {
-      persist([])
+      persist([], [])
     }
     return false
   }
@@ -235,11 +277,11 @@ export async function fetchAndStorePrivileges(
     const parsed = response.ok ? parsePrivilegesBody(body) : null
     if (!parsed) {
       if (failOpen) {
-        persist([])
+        persist([], [])
       }
       return false
     }
-    persist(parsed.items)
+    persist(parsed.items, parsed.sections)
     if (parsed.syncIntervalSeconds !== undefined) {
       writeSyncIntervalSeconds(parsed.syncIntervalSeconds)
     }
@@ -247,7 +289,7 @@ export async function fetchAndStorePrivileges(
     return true
   } catch {
     if (failOpen) {
-      persist([])
+      persist([], [])
     }
     return false
   }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { logout, user } from '../auth/authStore'
-import { onPrivilegesChanged, privileges } from '../auth/privileges'
+import { onPrivilegesChanged, privileges, sections } from '../auth/privileges'
 import {
   collectLaunchpadRows,
   type LaunchpadRow,
@@ -30,7 +30,7 @@ const layoutReady = ref(false)
 const privilegesUpdated = ref(false)
 
 function applyLayout(): void {
-  layoutRows.value = collectLaunchpadRows(privileges.value)
+  layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
   layoutReady.value = true
   privilegesUpdated.value = false
 }

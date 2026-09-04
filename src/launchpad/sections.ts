@@ -81,10 +81,11 @@ function isStaging(tags: string[]): boolean {
   return tags.some((tag) => tag.toUpperCase() === 'STAGING')
 }
 
-function resolveSection(privilege: Privilege): PrivilegeSection {
+function resolveSection(privilege: Privilege, catalog: Map<string, PrivilegeSection>): PrivilegeSection {
   const tags = asTags(privilege.metadata?.tags)
-  const section = privilege.metadata?.section
-  if (section && typeof section.id === 'string' && section.id.length > 0) {
+  const sectionId = privilege.metadata?.sectionId
+  const section = typeof sectionId === 'string' && sectionId.length > 0 ? catalog.get(sectionId) : undefined
+  if (section) {
     return {
       id: section.id,
       title: section.title || section.id,
@@ -260,15 +261,26 @@ function toLaunchpadRows(buckets: RowBucket[]): LaunchpadRow[] {
   })
 }
 
-export function collectLaunchpadRows(privileges: Privilege[]): LaunchpadRow[] {
+function catalogById(catalog: PrivilegeSection[]): Map<string, PrivilegeSection> {
+  const map = new Map<string, PrivilegeSection>()
+  for (const section of catalog) {
+    if (typeof section.id === 'string' && section.id.length > 0) {
+      map.set(section.id, section)
+    }
+  }
+  return map
+}
+
+export function collectLaunchpadRows(privileges: Privilege[], catalog: PrivilegeSection[] = []): LaunchpadRow[] {
   const sections = new Map<string, WorkingSection>()
+  const byId = catalogById(catalog)
 
   for (const privilege of privileges) {
     const tile = toTile(privilege)
     if (!tile) {
       continue
     }
-    const resolved = resolveSection(privilege)
+    const resolved = resolveSection(privilege, byId)
     const existing = sections.get(resolved.id)
     if (existing) {
       existing.tiles.push(tile)

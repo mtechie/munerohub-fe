@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import type { Router } from 'vue-router'
 import { cognitoConfig } from './config'
-import { clearPrivileges, fetchAndStorePrivileges, hasCachedPrivileges, hydratePrivileges, PRIVILEGES_KEY, startPrivilegeSync } from './privileges'
+import { clearPrivileges, fetchAndStorePrivileges, hasCachedPrivileges, hydratePrivileges, PRIVILEGES_KEY, SECTIONS_KEY, startPrivilegeSync } from './privileges'
 
 const TOKEN_KEYS = {
   accessToken: 'munero.hub.access_token',
@@ -488,7 +488,7 @@ export function watchAuthStorage(router: Router): void {
     const clearedAll = event.key === null
     const clearedToken =
       typeof event.key === 'string' && TOKEN_KEY_VALUES.includes(event.key) && event.newValue === null
-    if (event.key === PRIVILEGES_KEY) {
+    if (event.key === PRIVILEGES_KEY || event.key === SECTIONS_KEY) {
       hydratePrivileges()
       return
     }

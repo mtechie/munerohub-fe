@@ -44,20 +44,16 @@ True if **all** of the ids are present. Empty argument list is false.
 
 `metadata.icon` is a CSS class on the tile. GiftLov and PXM have built-in marks (`hub-icon-giftlov`, `hub-icon-pxm`) when `icon` is omitted.
 
-`section.pin` is `'start' | 'end' | 'top' | 'bottom'`. A pinned section takes that edge; other sections flow around it. The launchpad keeps a snapshot of the grid and does not rebuild when the privilege cache changes until the user clicks **Refresh Now**.
+Layout comes from the `sections` array on `GET /privileges` (cached as `munero.hub.sections`). Each privilege only stores `metadata.sectionId`. `section.pin` is `'start' | 'end' | 'top' | 'bottom'`. A pinned section takes that edge; other sections flow around it. The launchpad keeps a snapshot of the grid and does not rebuild when the privilege or section cache changes until the user clicks **Refresh Now**.
+
+Privilege `metadata`:
 
 ```json
 {
   "url": "https://giftlov.munero.net",
   "icon": "hub-icon-giftlov",
   "order": 2,
-  "section": {
-    "id": "my-applications",
-    "title": "My applications",
-    "row": 1,
-    "weight": 8,
-    "order": 1
-  }
+  "sectionId": "my-applications"
 }
 ```
 
@@ -67,7 +63,22 @@ True if **all** of the ids are present. Empty argument list is false.
   "icon": "hub-icon-pxm",
   "order": 1,
   "tags": ["STAGING"],
-  "section": {
+  "sectionId": "test-environments"
+}
+```
+
+`sections` catalog (same response):
+
+```json
+[
+  {
+    "id": "my-applications",
+    "title": "My applications",
+    "row": 1,
+    "weight": 8,
+    "order": 1
+  },
+  {
     "id": "test-environments",
     "title": "Test Environments",
     "row": 2,
@@ -75,7 +86,7 @@ True if **all** of the ids are present. Empty argument list is false.
     "order": 1,
     "pin": "bottom"
   }
-}
+]
 ```
 
 ## `getPrivilege(identifier)`

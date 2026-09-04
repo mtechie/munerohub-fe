@@ -113,3 +113,8 @@
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round' viewBox='0 0 24 24'><path d='m8 7.5-5 4.5 5 4.5M16 7.5l5 4.5-5 4.5M13.2 5.5l-2.4 13'/></svg>");
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round' viewBox='0 0 24 24'><path d='m8 7.5-5 4.5 5 4.5M16 7.5l5 4.5-5 4.5M13.2 5.5l-2.4 13'/></svg>");
 }
+
+.hub-icon-editor::before {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round' viewBox='0 0 24 24'><path d='M4.5 19.5h15'/><path d='m14.2 5.4 4.4 4.4-9.6 9.6H4.6v-4.4z'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round' viewBox='0 0 24 24'><path d='M4.5 19.5h15'/><path d='m14.2 5.4 4.4 4.4-9.6 9.6H4.6v-4.4z'/></svg>");
+}

@@ -35,9 +35,12 @@ const displayName = computed(() => user.value?.givenName || user.value?.name || 
 const displayEmail = computed(() => user.value?.email || '')
 const avatarLetter = computed(() => (givenName.value[0] || 'M').toUpperCase())
 
+const HOME_NAV = 'home'
+
 const layoutRows = ref<LaunchpadRow[]>([])
 const layoutReady = ref(false)
 const privilegesUpdated = ref(false)
+const activeNavId = ref(HOME_NAV)
 
 const searchQuery = ref('')
 const searchOpen = ref(false)
@@ -49,6 +52,13 @@ function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
   layoutReady.value = true
   privilegesUpdated.value = false
+  if (activeNavId.value !== HOME_NAV && !sectionExists(activeNavId.value)) {
+    activeNavId.value = HOME_NAV
+  }
+}
+
+function sectionExists(id: string): boolean {
+  return layoutRows.value.some((row) => row.sections.some((section) => section.id === id && section.tiles.length > 0))
 }
 
 onMounted(() => {
@@ -95,16 +105,32 @@ const navItems = computed(() => {
       .map((section) => ({
         id: section.id,
         label: section.title,
-        href: `#${section.id}`,
         icon: section.icon,
-        active: false,
+        active: section.id === activeNavId.value,
       })),
   )
   return [
-    { id: 'home', label: 'Home', href: '#top', icon: 'hub-icon-home', active: true },
+    { id: HOME_NAV, label: 'Home', icon: 'hub-icon-home', active: activeNavId.value === HOME_NAV },
     ...fromLayout,
   ]
 })
+
+const visibleRows = computed((): LaunchpadRow[] => {
+  if (activeNavId.value === HOME_NAV) {
+    return layoutRows.value
+  }
+  for (const row of layoutRows.value) {
+    const section = row.sections.find((item) => item.id === activeNavId.value && item.tiles.length > 0)
+    if (section) {
+      return [{ row: 1, sections: [{ ...section, columnStart: 1, weight: 12 }] }]
+    }
+  }
+  return []
+})
+
+function selectNav(id: string): void {
+  activeNavId.value = id
+}
 
 const visibleResources = computed((): SearchHit[] => {
   const hits: SearchHit[] = []
@@ -265,16 +291,18 @@ async function signOut(): Promise<void> {
       </div>
 
       <nav class="nav">
-        <a
+        <button
           v-for="item in navItems"
           :key="item.id"
-          :href="item.href"
+          type="button"
           class="nav-item"
           :class="{ active: item.active }"
+          :aria-current="item.active ? 'true' : undefined"
+          @click="selectNav(item.id)"
         >
           <span class="nav-icon" :class="item.icon" aria-hidden="true"></span>
           {{ item.label }}
-        </a>
+        </button>
       </nav>
 
       <div class="sidebar-foot">
@@ -363,7 +391,7 @@ async function signOut(): Promise<void> {
           <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
         </section>
 
-        <div v-for="row in layoutRows" :key="row.row" class="grid-row">
+        <div v-for="row in visibleRows" :key="row.row" class="grid-row">
           <template v-for="section in row.sections" :key="section.id">
             <section
               v-if="tilesOf(section).length"
@@ -381,7 +409,14 @@ async function signOut(): Promise<void> {
                 <span v-if="section.icon" class="section-icon" :class="section.icon" aria-hidden="true"></span>
                 {{ section.title }}
               </h2>
-              <a :href="`#${section.id}`">View all →</a>
+              <button
+                v-if="activeNavId === HOME_NAV"
+                type="button"
+                class="section-view-all"
+                @click="selectNav(section.id)"
+              >
+                View all →
+              </button>
             </header>
 
             <div v-if="section.layout === 'list'" class="tile-list">
@@ -492,12 +527,18 @@ async function signOut(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
   padding: 0.62rem 0.8rem;
   border-radius: 0.65rem;
   color: inherit;
-  text-decoration: none;
+  font: inherit;
   font-size: 0.92rem;
   font-weight: 550;
+  text-align: left;
+  cursor: pointer;
   touch-action: manipulation;
 }
 
@@ -873,14 +914,19 @@ kbd {
   border-radius: 0.3rem;
 }
 
-.section-head a {
+.section-view-all {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
   color: #6b7380;
+  font: inherit;
   font-size: 0.82rem;
-  text-decoration: none;
+  cursor: pointer;
   touch-action: manipulation;
 }
 
-.section-head a:hover {
+.section-view-all:hover {
   color: #1a1f26;
 }
 

@@ -23,3 +23,12 @@ body {
 #app {
   min-height: 100vh;
 }
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid #f47b20;
+  outline-offset: 2px;
+}

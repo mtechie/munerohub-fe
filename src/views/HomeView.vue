@@ -312,10 +312,12 @@ h2 {
   background: #fff;
   color: inherit;
   border-radius: 0.5rem;
+  min-height: 2.75rem;
   padding: 0.5rem 0.9rem;
   font: inherit;
   text-decoration: none;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .sign-out:hover {

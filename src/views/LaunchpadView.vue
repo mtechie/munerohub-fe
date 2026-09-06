@@ -43,6 +43,7 @@ const searchQuery = ref('')
 const searchOpen = ref(false)
 const highlightedIndex = ref(0)
 const searchInput = ref<HTMLInputElement | null>(null)
+const searchRoot = ref<HTMLElement | null>(null)
 
 function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
@@ -68,10 +69,22 @@ onMounted(() => {
       searchInput.value?.focus()
     }
   }
+  const onDocumentPointerDown = (event: PointerEvent) => {
+    if (!searchOpen.value) {
+      return
+    }
+    const target = event.target
+    if (target instanceof Node && searchRoot.value?.contains(target)) {
+      return
+    }
+    closeSearch()
+  }
   window.addEventListener('keydown', onKey)
+  document.addEventListener('pointerdown', onDocumentPointerDown)
   onUnmounted(() => {
     stop()
     window.removeEventListener('keydown', onKey)
+    document.removeEventListener('pointerdown', onDocumentPointerDown)
   })
 })
 
@@ -172,6 +185,16 @@ function closeSearch(): void {
   searchOpen.value = false
 }
 
+function onSearchBlur(event: FocusEvent): void {
+  const next = event.relatedTarget
+  if (!(next instanceof Node)) {
+    return
+  }
+  if (!searchRoot.value?.contains(next)) {
+    closeSearch()
+  }
+}
+
 function moveHighlight(delta: number): void {
   const count = searchResults.value.length
   if (count === 0) {
@@ -237,7 +260,7 @@ async function signOut(): Promise<void> {
   <div id="top" class="launchpad">
     <aside class="sidebar" aria-label="Hub navigation">
       <div class="brand">
-        <img class="brand-mark" src="/favicon.svg" alt="" />
+        <img class="brand-mark" src="/favicon.png" alt="" />
         <p class="brand-name">Munero Hub</p>
       </div>
 
@@ -276,10 +299,10 @@ async function signOut(): Promise<void> {
     <div class="main">
       <header class="topbar">
         <div class="mobile-brand">
-          <img class="brand-mark" src="/favicon.svg" alt="" />
+          <img class="brand-mark" src="/favicon.png" alt="" />
           <p class="brand-name">Munero Hub</p>
         </div>
-        <div class="search">
+        <div ref="searchRoot" class="search">
           <span class="search-icon" aria-hidden="true"></span>
           <input
             ref="searchInput"
@@ -295,7 +318,7 @@ async function signOut(): Promise<void> {
             @focus="openSearch"
             @input="openSearch"
             @keydown="onSearchKeydown"
-            @blur="closeSearch"
+            @blur="onSearchBlur"
           />
           <kbd>⌘ K</kbd>
           <ul
@@ -303,7 +326,6 @@ async function signOut(): Promise<void> {
             id="search-listbox"
             class="search-results"
             role="listbox"
-            @mousedown.prevent
           >
             <li v-if="!searchResults.length" class="search-empty" role="presentation">No matches</li>
             <li
@@ -315,7 +337,7 @@ async function signOut(): Promise<void> {
               :class="{ active: index === highlightedIndex }"
               :style="tileChrome(hit)"
               :aria-selected="index === highlightedIndex"
-              @mouseenter="highlightedIndex = index"
+              @pointerenter="highlightedIndex = index"
               @click="openResource(hit)"
             >
               <span v-if="hit.icon" class="tile-icon search-hit-icon" :class="hit.icon" aria-hidden="true"></span>
@@ -449,7 +471,8 @@ async function signOut(): Promise<void> {
 
 .brand-mark {
   width: 2.35rem;
-  height: 2.25rem;
+  height: 2.35rem;
+  object-fit: contain;
 }
 
 .brand-name {
@@ -475,6 +498,7 @@ async function signOut(): Promise<void> {
   text-decoration: none;
   font-size: 0.92rem;
   font-weight: 550;
+  touch-action: manipulation;
 }
 
 .nav-item:hover {
@@ -592,11 +616,13 @@ async function signOut(): Promise<void> {
   appearance: none;
   border: 0;
   background: none;
-  padding: 0;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.35rem;
   color: #6b7380;
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .sign-out:hover {
@@ -693,6 +719,7 @@ kbd {
   border: 1px solid #e3e8ed;
   border-radius: 0.75rem;
   box-shadow: 0 10px 28px rgb(26 31 38 / 12%);
+  touch-action: pan-y;
 }
 
 .search-empty {
@@ -706,9 +733,11 @@ kbd {
   grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.5rem 0.55rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.6rem;
   border-radius: 0.55rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .search-hit.active {
@@ -754,12 +783,13 @@ kbd {
 .bell {
   position: relative;
   appearance: none;
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid #e3e8ed;
   border-radius: 999px;
   background: #fff;
   cursor: default;
+  touch-action: manipulation;
 }
 
 .bell-icon {
@@ -847,6 +877,7 @@ kbd {
   color: #6b7380;
   font-size: 0.82rem;
   text-decoration: none;
+  touch-action: manipulation;
 }
 
 .section-head a:hover {
@@ -877,6 +908,7 @@ kbd {
   box-shadow: 0 1px 2px rgb(26 31 38 / 4%);
   color: inherit;
   text-decoration: none;
+  touch-action: manipulation;
 }
 
 .tile {
@@ -1023,12 +1055,14 @@ kbd {
   appearance: none;
   border: 0;
   border-radius: 0.6rem;
+  min-height: 2.75rem;
   padding: 0.55rem 1.1rem;
   background: #f47b20;
   color: #fff;
   font: inherit;
   font-weight: 650;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .privilege-gate-card button:hover {

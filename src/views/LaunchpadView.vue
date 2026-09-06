@@ -34,6 +34,20 @@ const greeting = computed(() => {
 const displayName = computed(() => user.value?.givenName || user.value?.name || 'Signed in')
 const displayEmail = computed(() => user.value?.email || '')
 const avatarLetter = computed(() => (givenName.value[0] || 'M').toUpperCase())
+const identityFields = computed(() => {
+  const profile = user.value
+  if (!profile) {
+    return []
+  }
+  return [
+    { label: 'Name', value: profile.name },
+    { label: 'Given name', value: profile.givenName },
+    { label: 'Family name', value: profile.familyName },
+    { label: 'Email', value: profile.email },
+    { label: 'Username', value: profile.username },
+    { label: 'Subject', value: profile.sub },
+  ].filter((field): field is { label: string; value: string } => Boolean(field.value))
+})
 
 const HOME_NAV = 'home'
 
@@ -47,6 +61,8 @@ const searchOpen = ref(false)
 const highlightedIndex = ref(0)
 const searchInput = ref<HTMLInputElement | null>(null)
 const searchRoot = ref<HTMLElement | null>(null)
+const userMenuOpen = ref(false)
+const userMenuRoot = ref<HTMLElement | null>(null)
 
 function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
@@ -78,16 +94,18 @@ onMounted(() => {
       event.preventDefault()
       searchInput.value?.focus()
     }
+    if (event.key === 'Escape' && userMenuOpen.value) {
+      closeUserMenu()
+    }
   }
   const onDocumentPointerDown = (event: PointerEvent) => {
-    if (!searchOpen.value) {
-      return
-    }
     const target = event.target
-    if (target instanceof Node && searchRoot.value?.contains(target)) {
-      return
+    if (searchOpen.value && !(target instanceof Node && searchRoot.value?.contains(target))) {
+      closeSearch()
     }
-    closeSearch()
+    if (userMenuOpen.value && !(target instanceof Node && userMenuRoot.value?.contains(target))) {
+      closeUserMenu()
+    }
   }
   window.addEventListener('keydown', onKey)
   document.addEventListener('pointerdown', onDocumentPointerDown)
@@ -277,7 +295,16 @@ function activeOptionId(index: number): string {
   return `search-option-${index}`
 }
 
+function toggleUserMenu(): void {
+  userMenuOpen.value = !userMenuOpen.value
+}
+
+function closeUserMenu(): void {
+  userMenuOpen.value = false
+}
+
 async function signOut(): Promise<void> {
+  closeUserMenu()
   await logout()
 }
 </script>
@@ -319,7 +346,6 @@ async function signOut(): Promise<void> {
             <strong>{{ displayName }}</strong>
             <small v-if="displayEmail">{{ displayEmail }}</small>
           </span>
-          <button type="button" class="sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
         </div>
       </div>
     </aside>
@@ -375,13 +401,34 @@ async function signOut(): Promise<void> {
             </li>
           </ul>
         </div>
-        <div class="top-actions">
-          <button type="button" class="bell" aria-label="Notifications">
-            <span class="bell-icon" aria-hidden="true"></span>
-            <span class="badge">3</span>
+        <div ref="userMenuRoot" class="user-menu">
+          <button
+            type="button"
+            class="user-menu-trigger"
+            aria-label="Account menu"
+            aria-haspopup="dialog"
+            aria-controls="user-menu-panel"
+            :aria-expanded="userMenuOpen"
+            @click="toggleUserMenu"
+          >
+            <span class="avatar header-avatar" aria-hidden="true">{{ avatarLetter }}</span>
           </button>
-          <span class="avatar header-avatar" aria-hidden="true">{{ avatarLetter }}</span>
-          <button type="button" class="sign-out mobile-sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
+          <div
+            v-if="userMenuOpen"
+            id="user-menu-panel"
+            class="user-menu-panel"
+            role="dialog"
+            aria-label="Account"
+          >
+            <dl v-if="identityFields.length" class="user-menu-fields">
+              <template v-for="field in identityFields" :key="field.label">
+                <dt>{{ field.label }}</dt>
+                <dd>{{ field.value }}</dd>
+              </template>
+            </dl>
+            <p v-else class="user-menu-empty">No profile details</p>
+            <button type="button" class="sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
+          </div>
         </div>
       </header>
 
@@ -553,7 +600,6 @@ async function signOut(): Promise<void> {
 
 .nav-icon,
 .search-icon,
-.bell-icon,
 .m365-mark {
   display: inline-flex;
   align-items: center;
@@ -564,7 +610,6 @@ async function signOut(): Promise<void> {
 }
 
 .search-icon,
-.bell-icon,
 .m365-mark {
   background: currentColor;
   -webkit-mask: center / contain no-repeat;
@@ -625,9 +670,7 @@ async function signOut(): Promise<void> {
 .user-chip {
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-areas:
-    'avatar meta'
-    'out out';
+  grid-template-areas: 'avatar meta';
   gap: 0.35rem 0.65rem;
   align-items: center;
 }
@@ -652,16 +695,18 @@ async function signOut(): Promise<void> {
 }
 
 .sign-out {
-  grid-area: out;
-  justify-self: start;
   appearance: none;
   border: 0;
-  background: none;
+  background: #fff1e6;
+  width: 100%;
   min-height: 2.75rem;
-  padding: 0.45rem 0.35rem;
-  color: #6b7380;
+  margin-top: 0.35rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.55rem;
+  color: #8a4b16;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.88rem;
+  font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -808,53 +853,60 @@ kbd {
   white-space: nowrap;
 }
 
-.mobile-sign-out {
-  display: none;
-  grid-area: auto;
-  justify-self: auto;
-  font-size: 0.8rem;
-}
-
 .top-actions {
   display: flex;
   align-items: center;
   gap: 0.7rem;
 }
 
-.bell {
+.user-menu {
   position: relative;
+}
+
+.user-menu-trigger {
   appearance: none;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1px solid #e3e8ed;
-  border-radius: 999px;
-  background: #fff;
-  cursor: default;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
   touch-action: manipulation;
 }
 
-.bell-icon {
+.user-menu-panel {
   position: absolute;
-  inset: 0;
-  margin: auto;
-  opacity: 0.75;
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M6 16.5h12l-1.2-2.1V11a4.8 4.8 0 1 0-9.6 0v3.4z'/><path d='M10 18.2a2 2 0 0 0 4 0'/></svg>");
-  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M6 16.5h12l-1.2-2.1V11a4.8 4.8 0 1 0-9.6 0v3.4z'/><path d='M10 18.2a2 2 0 0 0 4 0'/></svg>");
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 9;
+  width: min(20rem, calc(100vw - 2rem));
+  padding: 0.9rem 1rem 0.85rem;
+  background: #fff;
+  border: 1px solid #e3e8ed;
+  border-radius: 0.85rem;
+  box-shadow: 0 10px 28px rgb(26 31 38 / 12%);
 }
 
-.badge {
-  position: absolute;
-  top: -0.2rem;
-  right: -0.15rem;
-  min-width: 1rem;
-  height: 1rem;
-  padding: 0 0.25rem;
-  border-radius: 999px;
-  background: #e23b3b;
-  color: #fff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  line-height: 1rem;
+.user-menu-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 0.85rem;
+  margin: 0 0 0.35rem;
+}
+
+.user-menu-fields dt {
+  color: #6b7380;
+  font-size: 0.75rem;
+}
+
+.user-menu-fields dd {
+  margin: 0;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.user-menu-empty {
+  margin: 0 0 0.35rem;
+  color: #6b7380;
+  font-size: 0.88rem;
 }
 
 .content {
@@ -1153,10 +1205,6 @@ kbd {
 
   .search kbd {
     display: none;
-  }
-
-  .mobile-sign-out {
-    display: inline;
   }
 
   .greeting p {

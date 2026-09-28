@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { authBusy, isAuthenticated, logout, user } from '../auth/authStore'
-import { getPrivilege, onPrivilegesChanged, privileges, sections } from '../auth/privileges'
+import { announcements, fetchAnnouncements } from '../auth/announcements'
+import { authBusy, getAccessToken, isAuthenticated, logout, user } from '../auth/authStore'
 import {
-  collectLaunchpadRows,
-  type LaunchpadRow,
-  type LaunchpadSection,
-  type LaunchpadTile,
-} from '../launchpad/sections'
+  fetchAndStorePrivileges,
+  getPrivilege,
+  onPrivilegesChanged,
+  privileges,
+  privilegesLoadFailed,
+  privilegesReady,
+  sections,
+} from '../auth/privileges'
+import AnnouncementsPanel from '../launchpad/AnnouncementsPanel.vue'
+import LaunchpadRows from '../launchpad/LaunchpadRows.vue'
+import { collectLaunchpadRows, type LaunchpadRow } from '../launchpad/sections'
+import '../launchpad/grid.css'
 import '../launchpad/icons.css'
 
 interface SearchHit {
@@ -50,6 +57,7 @@ const identityFields = computed(() => {
 })
 
 const HOME_NAV = 'home'
+const ANNOUNCEMENTS_NAV = 'announcements'
 
 const layoutRows = ref<LaunchpadRow[]>([])
 const layoutReady = ref(false)
@@ -64,11 +72,21 @@ const searchRoot = ref<HTMLElement | null>(null)
 const userMenuOpen = ref(false)
 const userMenuRoot = ref<HTMLElement | null>(null)
 
+const showAnnouncements = computed(() => announcements.value.length > 0)
+
 function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
   layoutReady.value = true
   privilegesUpdated.value = false
-  if (activeNavId.value !== HOME_NAV && !sectionExists(activeNavId.value)) {
+  if (activeNavId.value === ANNOUNCEMENTS_NAV && !showAnnouncements.value) {
+    activeNavId.value = HOME_NAV
+    return
+  }
+  if (
+    activeNavId.value !== HOME_NAV &&
+    activeNavId.value !== ANNOUNCEMENTS_NAV &&
+    !sectionExists(activeNavId.value)
+  ) {
     activeNavId.value = HOME_NAV
   }
 }
@@ -77,10 +95,48 @@ function sectionExists(id: string): boolean {
   return layoutRows.value.some((row) => row.sections.some((section) => section.id === id && section.tiles.length > 0))
 }
 
+function isBottomRow(row: LaunchpadRow): boolean {
+  return row.sections.length > 0 && row.sections.every((section) => section.pin === 'bottom')
+}
+
+const homeFlowRows = computed(() => layoutRows.value.filter((row) => !isBottomRow(row)))
+const homeBottomRows = computed(() => layoutRows.value.filter((row) => isBottomRow(row)))
+
+async function loadAnnouncements(): Promise<void> {
+  if (!isAuthenticated.value) {
+    return
+  }
+  const token = await getAccessToken()
+  await fetchAnnouncements(token)
+}
+
+async function loadPrivilegesUntilReady(): Promise<void> {
+  let delayMs = 3000
+  while (retryActive && isAuthenticated.value && !privilegesReady.value) {
+    const token = await getAccessToken()
+    const ok = await fetchAndStorePrivileges(token, { failOpen: false })
+    if (ok || privilegesReady.value || !retryActive) {
+      return
+    }
+    await new Promise<void>((resolve) => {
+      retryTimer = window.setTimeout(resolve, delayMs)
+    })
+    delayMs = Math.min(delayMs + 2000, 15000)
+  }
+}
+
+let retryActive = false
+let retryTimer: number | null = null
+
 onMounted(() => {
+  retryActive = true
   applyLayout()
+  void loadPrivilegesUntilReady()
+  if (privilegesReady.value) {
+    void loadAnnouncements()
+  }
   const stop = onPrivilegesChanged(() => {
-    if (authBusy.value || !isAuthenticated.value) {
+    if (authBusy.value || !isAuthenticated.value || !privilegesReady.value) {
       return
     }
     if (!layoutReady.value || layoutRows.value.length === 0) {
@@ -110,10 +166,29 @@ onMounted(() => {
   window.addEventListener('keydown', onKey)
   document.addEventListener('pointerdown', onDocumentPointerDown)
   onUnmounted(() => {
+    retryActive = false
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+    }
     stop()
     window.removeEventListener('keydown', onKey)
     document.removeEventListener('pointerdown', onDocumentPointerDown)
   })
+})
+
+watch(privilegesReady, (ready) => {
+  if (!ready) {
+    return
+  }
+  applyLayout()
+  void loadAnnouncements()
+})
+
+watch(showAnnouncements, (visible) => {
+  if (!visible && activeNavId.value === ANNOUNCEMENTS_NAV) {
+    activeNavId.value = HOME_NAV
+  }
 })
 
 const navItems = computed(() => {
@@ -124,17 +199,27 @@ const navItems = computed(() => {
         id: section.id,
         label: section.title,
         icon: section.icon,
+        announcements: false,
         active: section.id === activeNavId.value,
       })),
   )
-  return [
-    { id: HOME_NAV, label: 'Home', icon: 'hub-icon-home', active: activeNavId.value === HOME_NAV },
-    ...fromLayout,
+  const items = [
+    { id: HOME_NAV, label: 'Home', icon: 'hub-icon-home', announcements: false, active: activeNavId.value === HOME_NAV },
   ]
+  if (showAnnouncements.value) {
+    items.push({
+      id: ANNOUNCEMENTS_NAV,
+      label: 'Announcements',
+      icon: 'hub-icon-megaphone',
+      announcements: true,
+      active: activeNavId.value === ANNOUNCEMENTS_NAV,
+    })
+  }
+  return [...items, ...fromLayout]
 })
 
 const visibleRows = computed((): LaunchpadRow[] => {
-  if (activeNavId.value === HOME_NAV) {
+  if (activeNavId.value === HOME_NAV || activeNavId.value === ANNOUNCEMENTS_NAV) {
     return layoutRows.value
   }
   for (const row of layoutRows.value) {
@@ -195,14 +280,6 @@ watch(highlightedIndex, (index) => {
   }
   document.getElementById(activeOptionId(index))?.scrollIntoView({ block: 'nearest' })
 })
-
-function tilesOf(section: LaunchpadSection): LaunchpadTile[] {
-  return section.tiles
-}
-
-function tileHref(tile: LaunchpadTile): string | undefined {
-  return tile.url
-}
 
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
@@ -323,11 +400,11 @@ async function signOut(): Promise<void> {
           :key="item.id"
           type="button"
           class="nav-item"
-          :class="{ active: item.active }"
+          :class="{ active: item.active, 'announcements-nav': item.announcements }"
           :aria-current="item.active ? 'true' : undefined"
           @click="selectNav(item.id)"
         >
-          <span class="nav-icon" :class="item.icon" aria-hidden="true"></span>
+          <span class="nav-icon" :class="[item.icon, item.announcements ? 'announcements-mark' : '']" aria-hidden="true"></span>
           {{ item.label }}
         </button>
       </nav>
@@ -369,6 +446,7 @@ async function signOut(): Promise<void> {
             :aria-expanded="searchOpen"
             aria-controls="search-listbox"
             :aria-activedescendant="searchOpen && searchResults.length ? activeOptionId(highlightedIndex) : undefined"
+            :disabled="!privilegesReady"
             @focus="openSearch"
             @input="openSearch"
             @keydown="onSearchKeydown"
@@ -433,86 +511,50 @@ async function signOut(): Promise<void> {
       </header>
 
       <div class="content">
-        <section class="greeting">
-          <h1>{{ greeting }} 👋</h1>
-          <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
-        </section>
-
-        <div v-for="row in visibleRows" :key="row.row" class="grid-row">
-          <template v-for="section in row.sections" :key="section.id">
-            <section
-              v-if="tilesOf(section).length"
-              :id="section.id"
-              class="section"
-              :class="`layout-${section.layout}`"
-              :style="{
-                '--weight': String(section.weight),
-                '--col-start': String(section.columnStart),
-                backgroundColor: section.backgroundColor || undefined,
-              }"
-            >
-            <header class="section-head">
-              <h2>
-                <span v-if="section.icon" class="section-icon" :class="section.icon" aria-hidden="true"></span>
-                {{ section.title }}
-              </h2>
-              <button
-                v-if="activeNavId === HOME_NAV"
-                type="button"
-                class="section-view-all"
-                @click="selectNav(section.id)"
-              >
-                View all →
-              </button>
-            </header>
-
-            <div v-if="section.layout === 'list'" class="tile-list">
-              <component
-                :is="tileHref(tile) ? 'a' : 'div'"
-                v-for="tile in tilesOf(section)"
-                :key="tile.identifier"
-                class="list-item"
-                :style="tileChrome(tile)"
-                v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
-              >
-                <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                <span class="list-copy">
-                  <strong>{{ tile.name }}</strong>
-                  <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
-                </span>
-                <span v-if="section.showTags && tile.tags.length" class="tile-tags">
-                  <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
-                </span>
-              </component>
-            </div>
-
-            <div v-else class="tile-grid" :class="{ 'tile-grid-detail': section.showDescription }">
-              <component
-                :is="tileHref(tile) ? 'a' : 'div'"
-                v-for="tile in tilesOf(section)"
-                :key="tile.identifier"
-                class="tile"
-                :class="{ 'tile-detail': section.showDescription }"
-                :style="tileChrome(tile)"
-                v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
-              >
-                <span v-if="section.showTags && tile.tags.length" class="tile-tags">
-                  <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
-                </span>
-                <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
-                <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
-                <strong>{{ tile.name }}</strong>
-                <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
-              </component>
-            </div>
-          </section>
-          </template>
+        <div v-if="privilegesLoadFailed" class="privileges-load-error" role="status" aria-live="polite">
+          <div class="privileges-load-card">
+            <p class="privileges-load-title">Something went wrong</p>
+            <p>We're working on it.</p>
+          </div>
         </div>
+
+        <template v-else-if="privilegesReady">
+          <section class="greeting">
+            <h1>{{ greeting }} 👋</h1>
+            <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
+          </section>
+
+          <AnnouncementsPanel
+            v-if="activeNavId === ANNOUNCEMENTS_NAV && showAnnouncements"
+            :items="announcements"
+          />
+
+          <template v-else-if="activeNavId === HOME_NAV">
+            <div class="home-cluster" :class="{ 'with-announcements': showAnnouncements }">
+              <div class="home-flow">
+                <LaunchpadRows :rows="homeFlowRows" :show-view-all="true" @select-nav="selectNav" />
+              </div>
+              <AnnouncementsPanel
+                v-if="showAnnouncements"
+                :items="announcements"
+                :show-view-all="true"
+                @view-all="selectNav(ANNOUNCEMENTS_NAV)"
+              />
+            </div>
+            <LaunchpadRows :rows="homeBottomRows" :show-view-all="true" @select-nav="selectNav" />
+          </template>
+
+          <LaunchpadRows
+            v-else
+            :rows="visibleRows"
+            :show-view-all="false"
+            @select-nav="selectNav"
+          />
+        </template>
       </div>
     </div>
 
-    <div v-if="privilegesUpdated && !authBusy && isAuthenticated" class="privilege-gate" role="dialog" aria-modal="true" aria-labelledby="privilege-gate-title">
+    <div v-if="privilegesUpdated && privilegesReady && !authBusy && isAuthenticated" class="privilege-gate" role="dialog" aria-modal="true" aria-labelledby="privilege-gate-title">
       <div class="privilege-gate-card">
         <p id="privilege-gate-title">Your privileges were updated</p>
         <button type="button" @click="applyLayout">Refresh Now</button>
@@ -925,202 +967,50 @@ kbd {
   color: #5c6570;
 }
 
-.grid-row {
+.home-cluster {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 1.15rem;
   margin-bottom: 1.15rem;
+  align-items: start;
 }
 
-.section {
-  grid-column: var(--col-start, 1) / span var(--weight, 12);
+.home-cluster.with-announcements {
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+}
+
+.home-flow {
   min-width: 0;
-  scroll-margin-top: 1rem;
+}
+
+.home-flow :deep(.grid-row:last-child) {
+  margin-bottom: 0;
+}
+
+.privileges-load-error {
+  display: flex;
+  justify-content: center;
+  padding: 2.5rem 0 1rem;
+}
+
+.privileges-load-card {
+  width: min(24rem, 100%);
+  padding: 1.4rem 1.35rem 1.25rem;
+  background: #fff;
   border-radius: 0.95rem;
-  padding: 1rem 1.1rem 1.15rem;
+  box-shadow: 0 12px 40px rgb(26 31 38 / 16%);
+  text-align: center;
 }
 
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
-}
-
-.section-head h2 {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0;
+.privileges-load-title {
+  margin: 0 0 0.45rem;
   font-size: 1.15rem;
   font-weight: 700;
 }
 
-.section-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 0.3rem;
-}
-
-.section-view-all {
-  appearance: none;
-  border: 0;
-  background: none;
-  padding: 0;
-  color: #6b7380;
-  font: inherit;
-  font-size: 0.82rem;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.section-view-all:hover {
-  color: #1a1f26;
-}
-
-.tile-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6.6rem, 1fr));
-  gap: 0.75rem;
-}
-
-.tile-grid-detail {
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 0.85rem;
-}
-
-.tile,
-.list-item {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  background: #fff;
-  border: 1px solid #e7ecf1;
-  border-radius: 0.9rem;
-  box-shadow: 0 1px 2px rgb(26 31 38 / 4%);
-  color: inherit;
-  text-decoration: none;
-  touch-action: manipulation;
-}
-
-.tile {
-  min-height: 7.1rem;
-  padding: 1rem 0.55rem 0.85rem;
-  text-align: center;
-}
-
-.tile strong {
-  display: -webkit-box;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--tile-text-color, inherit);
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.tile-detail {
-  align-items: flex-start;
-  min-height: 8.2rem;
-  padding: 1rem 1rem 0.9rem;
-  text-align: left;
-}
-
-.tile-detail strong {
-  font-size: 0.92rem;
-}
-
-.tile-detail small,
-.list-copy small {
-  color: #6b7380;
-  font-size: 0.78rem;
-}
-
-.tile-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.7rem;
-}
-
-.letter-mark {
-  background: #eef3f8;
-  color: var(--tile-icon-color, #3d5a80);
+.privileges-load-card p {
+  margin: 0;
+  color: #5c6570;
   font-size: 0.95rem;
-  font-weight: 750;
-}
-
-.tile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.tile-detail .tile-tags {
-  position: absolute;
-  top: 0.7rem;
-  right: 0.7rem;
-}
-
-.tile-tag {
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  background: #fde4d0;
-  color: #c45a16;
-  font-size: 0.62rem;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-}
-
-.tile-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.list-item {
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 0;
-  padding: 0.7rem 0.85rem;
-  text-align: left;
-}
-
-.list-item::after {
-  content: '›';
-  margin-left: auto;
-  color: #9aa3ad;
-  font-size: 1.1rem;
-}
-
-.list-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.list-copy strong {
-  color: var(--tile-text-color, inherit);
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.list-item .tile-icon {
-  width: 2rem;
-  height: 2rem;
 }
 
 .privilege-gate {
@@ -1215,33 +1105,8 @@ kbd {
     padding: 0.5rem max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   }
 
-  .grid-row,
-  .section {
-    display: block;
-  }
-
-  .section + .section,
-  .grid-row + .grid-row {
-    margin-top: 1.15rem;
-  }
-
-  .tile-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.55rem;
-  }
-
-  .tile {
-    min-height: 6.4rem;
-    padding: 0.75rem 0.35rem 0.6rem;
-  }
-
-  .tile strong {
-    font-size: 0.72rem;
-  }
-
-  .tile-grid-detail,
-  .tile-list {
-    grid-template-columns: 1fr;
+  .home-cluster.with-announcements {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

@@ -51,10 +51,14 @@ export interface Privilege {
 const privilegesState = reactive({
   items: [] as Privilege[],
   sections: [] as PrivilegeSection[],
+  ready: false,
+  loadFailed: false,
 })
 
 export const privileges = computed(() => privilegesState.items)
 export const sections = computed(() => privilegesState.sections)
+export const privilegesReady = computed(() => privilegesState.ready)
+export const privilegesLoadFailed = computed(() => privilegesState.loadFailed && !privilegesState.ready)
 
 export type PrivilegesChangedListener = (items: Privilege[]) => void
 
@@ -172,13 +176,17 @@ function markSynced(): void {
 
 function persist(items: Privilege[], nextSections?: PrivilegeSection[]): boolean {
   const sectionList = nextSections ?? privilegesState.sections
-  if (privilegesEqual(privilegesState.items, items) && sectionsEqual(privilegesState.sections, sectionList)) {
-    return false
-  }
+  const unchanged =
+    privilegesEqual(privilegesState.items, items) && sectionsEqual(privilegesState.sections, sectionList)
   privilegesState.items = items
   privilegesState.sections = sectionList
+  privilegesState.ready = true
+  privilegesState.loadFailed = false
   writeLocal(PRIVILEGES_KEY, JSON.stringify(items))
   writeLocal(SECTIONS_KEY, JSON.stringify(sectionList))
+  if (unchanged) {
+    return false
+  }
   emitPrivilegesChanged(items)
   return true
 }
@@ -209,7 +217,10 @@ export function hydratePrivileges(): void {
   const raw = readLocal(PRIVILEGES_KEY)
   const sectionRaw = readLocal(SECTIONS_KEY)
   if (raw === null && sectionRaw === null) {
-    persist([], [])
+    privilegesState.items = []
+    privilegesState.sections = []
+    privilegesState.ready = false
+    privilegesState.loadFailed = false
     return
   }
 
@@ -218,7 +229,10 @@ export function hydratePrivileges(): void {
     const parsedSections = sectionRaw === null ? [] : (JSON.parse(sectionRaw) as unknown)
     persist(Array.isArray(parsed) ? (parsed as Privilege[]) : [], asSectionList(parsedSections))
   } catch {
-    persist([], [])
+    privilegesState.items = []
+    privilegesState.sections = []
+    privilegesState.ready = false
+    privilegesState.loadFailed = true
   }
 }
 
@@ -236,7 +250,11 @@ export function stopPrivilegeSync(): void {
 
 export function clearPrivileges(): void {
   stopPrivilegeSync()
-  persist([], [])
+  privilegesState.items = []
+  privilegesState.sections = []
+  privilegesState.ready = false
+  privilegesState.loadFailed = false
+  emitPrivilegesChanged([])
   removeLocal(PRIVILEGES_KEY)
   removeLocal(SECTIONS_KEY)
   removeLocal(SYNC_INTERVAL_KEY)
@@ -277,6 +295,8 @@ export async function fetchAndStorePrivileges(
   if (!accessToken) {
     if (failOpen) {
       persist([], [])
+    } else if (!privilegesState.ready) {
+      privilegesState.loadFailed = true
     }
     return false
   }
@@ -291,6 +311,8 @@ export async function fetchAndStorePrivileges(
     if (!parsed) {
       if (failOpen) {
         persist([], [])
+      } else if (!privilegesState.ready) {
+        privilegesState.loadFailed = true
       }
       return false
     }
@@ -303,6 +325,8 @@ export async function fetchAndStorePrivileges(
   } catch {
     if (failOpen) {
       persist([], [])
+    } else if (!privilegesState.ready) {
+      privilegesState.loadFailed = true
     }
     return false
   }

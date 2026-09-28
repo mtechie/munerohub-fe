@@ -1,7 +1,8 @@
 import { computed, reactive } from 'vue'
 import type { Router } from 'vue-router'
 import { cognitoConfig } from './config'
-import { clearPrivileges, fetchAndStorePrivileges, hasCachedPrivileges, hydratePrivileges, PRIVILEGES_KEY, SECTIONS_KEY, startPrivilegeSync } from './privileges'
+import { clearAnnouncements } from './announcements'
+import { clearPrivileges, fetchAndStorePrivileges, hydratePrivileges, PRIVILEGES_KEY, privilegesReady, SECTIONS_KEY, startPrivilegeSync } from './privileges'
 
 const TOKEN_KEYS = {
   accessToken: 'munero.hub.access_token',
@@ -241,6 +242,7 @@ function resetMemory(): void {
 function clearTokens(): void {
   resetMemory()
   clearPrivileges()
+  clearAnnouncements()
 
   for (const key of TOKEN_KEY_VALUES) {
     removeLocal(key)
@@ -379,8 +381,8 @@ function beginPrivilegeSync(): void {
 
 export async function ensureAuthenticated(): Promise<boolean> {
   if (isAuthenticated.value) {
-    if (!hasCachedPrivileges()) {
-      void fetchAndStorePrivileges(state.accessToken)
+    if (!privilegesReady.value) {
+      void fetchAndStorePrivileges(state.accessToken, { failOpen: false })
     }
     beginPrivilegeSync()
     return true
@@ -389,8 +391,8 @@ export async function ensureAuthenticated(): Promise<boolean> {
     setAuthBusy('Loading…')
     try {
       const refreshed = await refreshTokens()
-      if (refreshed && !hasCachedPrivileges()) {
-        void fetchAndStorePrivileges(state.accessToken)
+      if (refreshed && !privilegesReady.value) {
+        void fetchAndStorePrivileges(state.accessToken, { failOpen: false })
       }
       if (refreshed) {
         beginPrivilegeSync()
@@ -492,7 +494,7 @@ export async function handleCallback(code: string, returnedState: string): Promi
       refreshToken: payload.refresh_token ?? null,
       expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000 - EXPIRY_SKEW_MS,
     })
-    await fetchAndStorePrivileges(payload.access_token)
+    await fetchAndStorePrivileges(payload.access_token, { failOpen: false })
     beginPrivilegeSync()
   } catch (error) {
     releaseAuthBusy()
@@ -558,6 +560,7 @@ export function watchAuthStorage(router: Router): void {
 
       resetMemory()
       clearPrivileges()
+      clearAnnouncements()
       if (router.currentRoute.value.meta.requiresAuth) {
         void router.replace({ name: 'landing' })
       }

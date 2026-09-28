@@ -43,8 +43,8 @@
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='black' stroke-width='1.8' viewBox='0 0 24 24'><path d='M4 10v4h3l7 4V6L7 10H4z'/><path d='M14 9.5c1.4.6 2.4 1.7 2.4 3s-1 2.4-2.4 3'/></svg>");
 }
 
-.section-icon.hub-icon-megaphone,
-.nav-icon.hub-icon-megaphone {
+.section-icon.hub-icon-megaphone:not(.announcements-mark),
+.nav-icon.hub-icon-megaphone:not(.announcements-mark) {
   display: none;
 }
 

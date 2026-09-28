@@ -348,8 +348,6 @@ function closeAnnouncement(): void {
   navigateHub(activeNavId.value)
 }
 
-const isHome = computed(() => activeNavId.value === HOME_NAV)
-
 const openAnnouncementItem = computed((): HubAnnouncement | undefined => {
   const id = routeAnnouncementId()
   if (!id) {
@@ -676,15 +674,6 @@ async function signOut(): Promise<void> {
             <h1>{{ greeting }} 👋</h1>
             <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
           </section>
-
-          <button
-            v-if="!isHome"
-            type="button"
-            class="back-home"
-            @click="goHome"
-          >
-            ← Back
-          </button>
 
           <AnnouncementsPanel
             v-if="activeNavId === ANNOUNCEMENTS_NAV && showAnnouncements"
@@ -1225,29 +1214,6 @@ kbd {
   color: #5c6570;
 }
 
-.back-home {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  margin: 0 0 1rem;
-  padding: 0.45rem 0.9rem;
-  border: 1px solid #e3e8ed;
-  border-radius: 0.65rem;
-  background: #fff;
-  color: #1a1f26;
-  font: inherit;
-  font-size: 0.92rem;
-  font-weight: 650;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.back-home:hover {
-  background: #fff1e6;
-  border-color: #f47b20;
-}
-
 .home-cluster {
   display: grid;
   gap: 1.15rem;
@@ -1486,11 +1452,6 @@ kbd {
 
   .greeting p {
     display: none;
-  }
-
-  .back-home {
-    width: 100%;
-    justify-content: center;
   }
 
   .content {

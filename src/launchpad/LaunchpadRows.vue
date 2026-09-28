@@ -5,10 +5,12 @@ import './grid.css'
 defineProps<{
   rows: LaunchpadRow[]
   showViewAll: boolean
+  showBack?: boolean
 }>()
 
 const emit = defineEmits<{
   selectNav: [id: string]
+  back: []
 }>()
 
 function tilesOf(section: LaunchpadSection): LaunchpadTile[] {
@@ -56,7 +58,15 @@ function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<st
             {{ section.title }}
           </h2>
           <button
-            v-if="showViewAll"
+            v-if="showBack"
+            type="button"
+            class="section-view-all"
+            @click="emit('back')"
+          >
+            ← Back
+          </button>
+          <button
+            v-else-if="showViewAll"
             type="button"
             class="section-view-all"
             @click="emit('selectNav', section.id)"

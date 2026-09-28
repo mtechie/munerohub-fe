@@ -14,9 +14,18 @@ export interface HubAnnouncement {
 
 const announcementsState = reactive({
   items: [] as HubAnnouncement[],
+  loaded: false,
 })
 
 export const announcements = computed(() => announcementsState.items)
+export const announcementsLoaded = computed(() => announcementsState.loaded)
+
+const SYNC_INTERVAL_MS = 10 * 60 * 1000
+
+let syncTimer: number | null = null
+let getAccessToken: (() => Promise<string | null>) | null = null
+let visibilityHandler: (() => void) | null = null
+let lastSyncedAt = 0
 
 function asPriority(value: unknown): AnnouncementPriority {
   return value === 'High' ? 'High' : 'Normal'
@@ -60,7 +69,9 @@ function parseAnnouncements(body: unknown): HubAnnouncement[] | null {
 }
 
 export function clearAnnouncements(): void {
+  stopAnnouncementSync()
   announcementsState.items = []
+  announcementsState.loaded = false
 }
 
 export async function fetchAnnouncements(accessToken: string | null): Promise<boolean> {
@@ -79,8 +90,52 @@ export async function fetchAnnouncements(accessToken: string | null): Promise<bo
       return false
     }
     announcementsState.items = parsed
+    announcementsState.loaded = true
+    lastSyncedAt = Date.now()
     return true
   } catch {
     return false
+  }
+}
+
+function stopAnnouncementSync(): void {
+  if (syncTimer !== null) {
+    window.clearInterval(syncTimer)
+    syncTimer = null
+  }
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
+  }
+  getAccessToken = null
+  lastSyncedAt = 0
+}
+
+async function syncTick(): Promise<void> {
+  if (document.visibilityState !== 'visible' || !getAccessToken) {
+    return
+  }
+  if (lastSyncedAt > 0 && Date.now() - lastSyncedAt < SYNC_INTERVAL_MS) {
+    return
+  }
+  const token = await getAccessToken()
+  await fetchAnnouncements(token)
+}
+
+export function startAnnouncementSync(tokenProvider: () => Promise<string | null>): void {
+  getAccessToken = tokenProvider
+  if (syncTimer !== null) {
+    return
+  }
+  syncTimer = window.setInterval(() => {
+    void syncTick()
+  }, SYNC_INTERVAL_MS)
+  if (!visibilityHandler) {
+    visibilityHandler = () => {
+      if (document.visibilityState === 'visible') {
+        void syncTick()
+      }
+    }
+    document.addEventListener('visibilitychange', visibilityHandler)
   }
 }

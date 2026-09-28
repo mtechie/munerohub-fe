@@ -43,10 +43,12 @@
   appearance: none;
   border: 0;
   background: none;
-  padding: 0;
-  color: #6b7380;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.15rem;
+  color: #2f6fed;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
 }

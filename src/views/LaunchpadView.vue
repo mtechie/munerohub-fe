@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { announcements, fetchAnnouncements } from '../auth/announcements'
+import { useRoute, useRouter } from 'vue-router'
+import { announcements, announcementsLoaded, fetchAnnouncements, type HubAnnouncement } from '../auth/announcements'
 import { authBusy, getAccessToken, isAuthenticated, logout, user } from '../auth/authStore'
 import {
   fetchAndStorePrivileges,
@@ -59,6 +60,9 @@ const identityFields = computed(() => {
 const HOME_NAV = 'home'
 const ANNOUNCEMENTS_NAV = 'announcements'
 
+const route = useRoute()
+const router = useRouter()
+
 const layoutRows = ref<LaunchpadRow[]>([])
 const layoutReady = ref(false)
 const privilegesUpdated = ref(false)
@@ -74,21 +78,74 @@ const userMenuRoot = ref<HTMLElement | null>(null)
 
 const showAnnouncements = computed(() => announcements.value.length > 0)
 
+function queryString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function hubQuery(section: string, announcementId?: string): Record<string, string> {
+  const query: Record<string, string> = {}
+  if (section !== HOME_NAV) {
+    query.section = section
+  }
+  if (announcementId) {
+    query.announcement = announcementId
+  }
+  return query
+}
+
+function routeSection(): string {
+  return queryString(route.query.section) ?? HOME_NAV
+}
+
+function routeAnnouncementId(): string | undefined {
+  return queryString(route.query.announcement)
+}
+
+function queriesMatch(section: string, announcementId?: string): boolean {
+  return routeSection() === section && (routeAnnouncementId() ?? '') === (announcementId ?? '')
+}
+
+function resolvedSection(section: string): string {
+  if (section === HOME_NAV) {
+    return HOME_NAV
+  }
+  if (section === ANNOUNCEMENTS_NAV) {
+    if (showAnnouncements.value || !announcementsLoaded.value) {
+      return ANNOUNCEMENTS_NAV
+    }
+    return HOME_NAV
+  }
+  if (!layoutReady.value) {
+    return section
+  }
+  return sectionExists(section) ? section : HOME_NAV
+}
+
+function navigateHub(section: string, announcementId?: string, mode: 'push' | 'replace' = 'push'): void {
+  const nextSection = resolvedSection(section)
+  if (queriesMatch(nextSection, announcementId)) {
+    activeNavId.value = nextSection
+    return
+  }
+  const target = { name: 'home' as const, query: hubQuery(nextSection, announcementId) }
+  if (mode === 'replace') {
+    void router.replace(target)
+  } else {
+    void router.push(target)
+  }
+}
+
 function applyLayout(): void {
   layoutRows.value = collectLaunchpadRows(privileges.value, sections.value)
   layoutReady.value = true
   privilegesUpdated.value = false
-  if (activeNavId.value === ANNOUNCEMENTS_NAV && !showAnnouncements.value) {
-    activeNavId.value = HOME_NAV
+  const requested = routeSection()
+  const next = resolvedSection(requested)
+  if (next !== requested) {
+    navigateHub(next, routeAnnouncementId(), 'replace')
     return
   }
-  if (
-    activeNavId.value !== HOME_NAV &&
-    activeNavId.value !== ANNOUNCEMENTS_NAV &&
-    !sectionExists(activeNavId.value)
-  ) {
-    activeNavId.value = HOME_NAV
-  }
+  activeNavId.value = next
 }
 
 function sectionExists(id: string): boolean {
@@ -152,6 +209,16 @@ onMounted(() => {
     }
     if (event.key === 'Escape' && userMenuOpen.value) {
       closeUserMenu()
+      return
+    }
+    if (event.key === 'Escape' && routeAnnouncementId()) {
+      event.preventDefault()
+      closeAnnouncement()
+      return
+    }
+    if (event.key === 'Escape' && !searchOpen.value && activeNavId.value !== HOME_NAV) {
+      event.preventDefault()
+      goHome()
     }
   }
   const onDocumentPointerDown = (event: PointerEvent) => {
@@ -185,11 +252,33 @@ watch(privilegesReady, (ready) => {
   void loadAnnouncements()
 })
 
-watch(showAnnouncements, (visible) => {
-  if (!visible && activeNavId.value === ANNOUNCEMENTS_NAV) {
-    activeNavId.value = HOME_NAV
-  }
-})
+watch(
+  () =>
+    [
+      route.query.section,
+      route.query.announcement,
+      showAnnouncements.value,
+      layoutReady.value,
+      announcementsLoaded.value,
+    ] as const,
+  () => {
+    const requested = routeSection()
+    const next = resolvedSection(requested)
+    if (next !== requested && layoutReady.value && privilegesReady.value) {
+      navigateHub(next, routeAnnouncementId(), 'replace')
+      return
+    }
+    activeNavId.value = next
+    const announcementId = routeAnnouncementId()
+    if (
+      announcementId &&
+      announcementsLoaded.value &&
+      !announcements.value.some((item) => item.id === announcementId)
+    ) {
+      navigateHub(next, undefined, 'replace')
+    }
+  },
+)
 
 const navItems = computed(() => {
   const fromLayout = layoutRows.value.flatMap((row) =>
@@ -232,7 +321,46 @@ const visibleRows = computed((): LaunchpadRow[] => {
 })
 
 function selectNav(id: string): void {
-  activeNavId.value = id
+  navigateHub(id)
+  document.getElementById('top')?.scrollIntoView()
+}
+
+function goHome(): void {
+  navigateHub(HOME_NAV)
+  document.getElementById('top')?.scrollIntoView()
+}
+
+function openAnnouncement(id: string): void {
+  navigateHub(activeNavId.value, id)
+}
+
+function closeAnnouncement(): void {
+  navigateHub(activeNavId.value)
+}
+
+const isHome = computed(() => activeNavId.value === HOME_NAV)
+
+const openAnnouncementItem = computed((): HubAnnouncement | undefined => {
+  const id = routeAnnouncementId()
+  if (!id) {
+    return undefined
+  }
+  return announcements.value.find((item) => item.id === id)
+})
+
+function announcementUrgent(item: HubAnnouncement): boolean {
+  return item.priority === 'High'
+}
+
+function announcementDate(value: string | undefined): string {
+  if (!value) {
+    return ''
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return ''
+  }
+  return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 const visibleResources = computed((): SearchHit[] => {
@@ -363,6 +491,7 @@ function onSearchKeydown(event: KeyboardEvent): void {
   }
   if (event.key === 'Escape') {
     event.preventDefault()
+    event.stopPropagation()
     closeSearch()
     searchInput.value?.blur()
   }
@@ -524,9 +653,21 @@ async function signOut(): Promise<void> {
             <p>Here's your personalized hub. Access the tools, updates, and resources you need.</p>
           </section>
 
+          <button
+            v-if="!isHome"
+            type="button"
+            class="back-home"
+            @click="goHome"
+          >
+            ← Back
+          </button>
+
           <AnnouncementsPanel
             v-if="activeNavId === ANNOUNCEMENTS_NAV && showAnnouncements"
             :items="announcements"
+            :show-back="true"
+            @back="goHome"
+            @more="openAnnouncement"
           />
 
           <template v-else-if="activeNavId === HOME_NAV">
@@ -539,6 +680,7 @@ async function signOut(): Promise<void> {
                 :items="announcements"
                 :show-view-all="true"
                 @view-all="selectNav(ANNOUNCEMENTS_NAV)"
+                @more="openAnnouncement"
               />
             </div>
             <LaunchpadRows :rows="homeBottomRows" :show-view-all="true" @select-nav="selectNav" />
@@ -548,9 +690,41 @@ async function signOut(): Promise<void> {
             v-else
             :rows="visibleRows"
             :show-view-all="false"
+            :show-back="true"
             @select-nav="selectNav"
+            @back="goHome"
           />
         </template>
+      </div>
+    </div>
+
+    <div
+      v-if="openAnnouncementItem"
+      class="announcement-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="announcement-modal-title"
+      @click.self="closeAnnouncement"
+    >
+      <div class="announcement-modal-card" :class="announcementUrgent(openAnnouncementItem) ? 'priority-high' : 'priority-normal'">
+        <div class="announcement-modal-head">
+          <span class="announcement-modal-badge">{{ announcementUrgent(openAnnouncementItem) ? 'Urgent' : 'Important' }}</span>
+          <button type="button" class="announcement-modal-close" @click="closeAnnouncement">Close</button>
+        </div>
+        <h2 id="announcement-modal-title">{{ openAnnouncementItem.title }}</h2>
+        <time v-if="announcementDate(openAnnouncementItem.publishFrom)" class="announcement-modal-date">
+          {{ announcementDate(openAnnouncementItem.publishFrom) }}
+        </time>
+        <p class="announcement-modal-body">{{ openAnnouncementItem.message }}</p>
+        <a
+          v-if="openAnnouncementItem.link"
+          class="announcement-modal-link"
+          :href="openAnnouncementItem.link"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open link →
+        </a>
       </div>
     </div>
 
@@ -967,6 +1141,29 @@ kbd {
   color: #5c6570;
 }
 
+.back-home {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  margin: 0 0 1rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #e3e8ed;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: #1a1f26;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.back-home:hover {
+  background: #fff1e6;
+  border-color: #f47b20;
+}
+
 .home-cluster {
   display: grid;
   gap: 1.15rem;
@@ -1057,6 +1254,100 @@ kbd {
   background: #e06e14;
 }
 
+.announcement-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgb(26 31 38 / 45%);
+}
+
+.announcement-modal-card {
+  width: min(32rem, 100%);
+  max-height: min(36rem, calc(100vh - 3rem));
+  overflow: auto;
+  padding: 1.25rem 1.3rem 1.2rem;
+  background: #fff;
+  border-radius: 0.95rem;
+  border-left: 0.35rem solid #2f9e60;
+  box-shadow: 0 12px 40px rgb(26 31 38 / 16%);
+}
+
+.announcement-modal-card.priority-high {
+  border-left-color: #d64545;
+}
+
+.announcement-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.announcement-modal-badge {
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: #1b7a3a;
+}
+
+.announcement-modal-card.priority-high .announcement-modal-badge {
+  color: #c0392b;
+}
+
+.announcement-modal-close {
+  appearance: none;
+  border: 0;
+  background: none;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.2rem;
+  color: #2f6fed;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.announcement-modal-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.2rem;
+  font-weight: 750;
+}
+
+.announcement-modal-date {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: #6b7380;
+  font-size: 0.82rem;
+}
+
+.announcement-modal-body {
+  margin: 0;
+  color: #3d4650;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.announcement-modal-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  margin-top: 1rem;
+  color: #2f6fed;
+  font-weight: 700;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.announcement-modal-link:hover {
+  color: #1a1f26;
+}
+
 @media (max-width: 960px) {
   .launchpad {
     grid-template-columns: minmax(0, 1fr);
@@ -1099,6 +1390,11 @@ kbd {
 
   .greeting p {
     display: none;
+  }
+
+  .back-home {
+    width: 100%;
+    justify-content: center;
   }
 
   .content {

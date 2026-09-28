@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import type { Router } from 'vue-router'
 import { cognitoConfig } from './config'
-import { clearAnnouncements } from './announcements'
+import { clearAnnouncements, startAnnouncementSync } from './announcements'
 import { clearPrivileges, fetchAndStorePrivileges, hydratePrivileges, PRIVILEGES_KEY, privilegesReady, SECTIONS_KEY, startPrivilegeSync } from './privileges'
 
 const TOKEN_KEYS = {
@@ -377,6 +377,7 @@ export function hydrate(): void {
 
 function beginPrivilegeSync(): void {
   startPrivilegeSync(getAccessToken)
+  startAnnouncementSync(getAccessToken)
 }
 
 export async function ensureAuthenticated(): Promise<boolean> {

@@ -77,6 +77,7 @@ const userMenuOpen = ref(false)
 const userMenuRoot = ref<HTMLElement | null>(null)
 
 const showAnnouncements = computed(() => announcements.value.length > 0)
+const hasUrgentAnnouncements = computed(() => announcements.value.some((item) => item.priority === 'High'))
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -328,6 +329,15 @@ function selectNav(id: string): void {
 function goHome(): void {
   navigateHub(HOME_NAV)
   document.getElementById('top')?.scrollIntoView()
+}
+
+function toggleAnnouncements(): void {
+  closeUserMenu()
+  if (activeNavId.value === ANNOUNCEMENTS_NAV) {
+    goHome()
+    return
+  }
+  selectNav(ANNOUNCEMENTS_NAV)
 }
 
 function openAnnouncement(id: string): void {
@@ -608,33 +618,47 @@ async function signOut(): Promise<void> {
             </li>
           </ul>
         </div>
-        <div ref="userMenuRoot" class="user-menu">
+        <div class="top-actions">
           <button
+            v-if="showAnnouncements"
             type="button"
-            class="user-menu-trigger"
-            aria-label="Account menu"
-            aria-haspopup="dialog"
-            aria-controls="user-menu-panel"
-            :aria-expanded="userMenuOpen"
-            @click="toggleUserMenu"
+            class="topbar-announcements announcements-nav"
+            :class="{ active: activeNavId === ANNOUNCEMENTS_NAV }"
+            :aria-label="hasUrgentAnnouncements ? 'Announcements, urgent items' : 'Announcements'"
+            :aria-pressed="activeNavId === ANNOUNCEMENTS_NAV"
+            @click="toggleAnnouncements"
           >
-            <span class="avatar header-avatar" aria-hidden="true">{{ avatarLetter }}</span>
+            <span class="nav-icon announcements-mark hub-icon-megaphone" aria-hidden="true"></span>
+            <span v-if="hasUrgentAnnouncements" class="topbar-announcements-dot" aria-hidden="true"></span>
           </button>
-          <div
-            v-if="userMenuOpen"
-            id="user-menu-panel"
-            class="user-menu-panel"
-            role="dialog"
-            aria-label="Account"
-          >
-            <dl v-if="identityFields.length" class="user-menu-fields">
-              <template v-for="field in identityFields" :key="field.label">
-                <dt>{{ field.label }}</dt>
-                <dd>{{ field.value }}</dd>
-              </template>
-            </dl>
-            <p v-else class="user-menu-empty">No profile details</p>
-            <button type="button" class="sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
+          <div ref="userMenuRoot" class="user-menu">
+            <button
+              type="button"
+              class="user-menu-trigger"
+              aria-label="Account menu"
+              aria-haspopup="dialog"
+              aria-controls="user-menu-panel"
+              :aria-expanded="userMenuOpen"
+              @click="toggleUserMenu"
+            >
+              <span class="avatar header-avatar" aria-hidden="true">{{ avatarLetter }}</span>
+            </button>
+            <div
+              v-if="userMenuOpen"
+              id="user-menu-panel"
+              class="user-menu-panel"
+              role="dialog"
+              aria-label="Account"
+            >
+              <dl v-if="identityFields.length" class="user-menu-fields">
+                <template v-for="field in identityFields" :key="field.label">
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ field.value }}</dd>
+                </template>
+              </dl>
+              <p v-else class="user-menu-empty">No profile details</p>
+              <button type="button" class="sign-out" :disabled="authBusy" @click="signOut">Sign out</button>
+            </div>
           </div>
         </div>
       </header>
@@ -675,13 +699,15 @@ async function signOut(): Promise<void> {
               <div class="home-flow">
                 <LaunchpadRows :rows="homeFlowRows" :show-view-all="true" @select-nav="selectNav" />
               </div>
-              <AnnouncementsPanel
-                v-if="showAnnouncements"
-                :items="announcements"
-                :show-view-all="true"
-                @view-all="selectNav(ANNOUNCEMENTS_NAV)"
-                @more="openAnnouncement"
-              />
+              <div class="desktop-announcements">
+                <AnnouncementsPanel
+                  v-if="showAnnouncements"
+                  :items="announcements"
+                  :show-view-all="true"
+                  @view-all="selectNav(ANNOUNCEMENTS_NAV)"
+                  @more="openAnnouncement"
+                />
+              </div>
             </div>
             <LaunchpadRows :rows="homeBottomRows" :show-view-all="true" @select-nav="selectNav" />
           </template>
@@ -1072,7 +1098,59 @@ kbd {
 .top-actions {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.55rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.topbar-announcements {
+  display: none;
+  position: relative;
+  appearance: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #1a1f26;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.topbar-announcements:hover,
+.topbar-announcements.active {
+  background: #fff1e6;
+  color: #c45a16;
+}
+
+.topbar-announcements:focus-visible,
+.user-menu-trigger:focus-visible {
+  outline: 2px solid #f47b20;
+  outline-offset: 2px;
+}
+
+.topbar-announcements .nav-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-basis: 1.25rem;
+}
+
+.topbar-announcements .nav-icon::before {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.topbar-announcements-dot {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #d64545;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 .user-menu {
@@ -1081,7 +1159,13 @@ kbd {
 
 .user-menu-trigger {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
   border: 0;
+  border-radius: 999px;
   background: none;
   padding: 0;
   cursor: pointer;
@@ -1363,6 +1447,8 @@ kbd {
     align-items: center;
     gap: 0.55rem;
     padding: 0;
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .brand-name {
@@ -1377,8 +1463,18 @@ kbd {
     padding: max(0.9rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.2rem max(1rem, env(safe-area-inset-left));
   }
 
+  .top-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .topbar-announcements {
+    display: inline-flex;
+  }
+
   .search {
     grid-column: 1 / -1;
+    grid-row: 2;
     max-width: none;
     margin: 0;
     width: 100%;
@@ -1403,6 +1499,10 @@ kbd {
 
   .home-cluster.with-announcements {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop-announcements {
+    display: none;
   }
 }
 </style>

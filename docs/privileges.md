@@ -77,6 +77,16 @@ Privilege `metadata`:
 }
 ```
 
+```json
+{
+  "url": "https://example.munero.net/policies/code-of-conduct",
+  "icon": "hub-icon-shield",
+  "order": 1,
+  "sectionId": "policies",
+  "openInNewWindow": true
+}
+```
+
 `sections` catalog (same response):
 
 ```json
@@ -109,16 +119,16 @@ Privilege `metadata`:
   },
   {
     "id": "policies",
-    "title": "Policies",
+    "title": "Policies & Resources",
     "row": 1,
     "weight": 4,
     "order": 2,
     "pin": "end",
     "icon": "hub-icon-document",
     "layout": "list",
-    "showIcon": false,
+    "showIcon": true,
     "showTags": false,
-    "showDescription": false
+    "showDescription": true
   }
 ]
 ```

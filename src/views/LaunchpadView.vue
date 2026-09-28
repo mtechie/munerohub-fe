@@ -14,7 +14,7 @@ import {
 } from '../auth/privileges'
 import AnnouncementsPanel from '../launchpad/AnnouncementsPanel.vue'
 import LaunchpadRows from '../launchpad/LaunchpadRows.vue'
-import { collectLaunchpadRows, type LaunchpadRow } from '../launchpad/sections'
+import { collectLaunchpadRows, type LaunchpadRow, type LaunchpadSection } from '../launchpad/sections'
 import '../launchpad/grid.css'
 import '../launchpad/icons.css'
 
@@ -59,6 +59,7 @@ const identityFields = computed(() => {
 
 const HOME_NAV = 'home'
 const ANNOUNCEMENTS_NAV = 'announcements'
+const POLICIES_SECTION = 'policies'
 
 const route = useRoute()
 const router = useRouter()
@@ -157,7 +158,46 @@ function isBottomRow(row: LaunchpadRow): boolean {
   return row.sections.length > 0 && row.sections.every((section) => section.pin === 'bottom')
 }
 
-const homeFlowRows = computed(() => layoutRows.value.filter((row) => !isBottomRow(row)))
+function stretchLoneUnpinned(row: LaunchpadRow): LaunchpadRow {
+  if (row.sections.length === 1 && !row.sections[0].pin) {
+    return {
+      ...row,
+      sections: [{ ...row.sections[0], columnStart: 1, weight: 12 }],
+    }
+  }
+  return row
+}
+
+const homePoliciesSection = computed((): LaunchpadSection | undefined => {
+  for (const row of layoutRows.value) {
+    const section = row.sections.find((item) => item.id === POLICIES_SECTION && item.tiles.length > 0)
+    if (section) {
+      return { ...section, columnStart: 1, weight: 12 }
+    }
+  }
+  return undefined
+})
+
+const homePoliciesRows = computed((): LaunchpadRow[] => {
+  const section = homePoliciesSection.value
+  if (!section) {
+    return []
+  }
+  return [{ row: 1, sections: [section] }]
+})
+
+const showHomeRail = computed(() => showAnnouncements.value || Boolean(homePoliciesSection.value))
+
+const homeFlowRows = computed(() =>
+  layoutRows.value
+    .filter((row) => !isBottomRow(row))
+    .map((row) => ({
+      ...row,
+      sections: row.sections.filter((section) => section.id !== POLICIES_SECTION),
+    }))
+    .map(stretchLoneUnpinned)
+    .filter((row) => row.sections.length > 0),
+)
 const homeBottomRows = computed(() => layoutRows.value.filter((row) => isBottomRow(row)))
 
 async function loadAnnouncements(): Promise<void> {
@@ -684,18 +724,23 @@ async function signOut(): Promise<void> {
           />
 
           <template v-else-if="activeNavId === HOME_NAV">
-            <div class="home-cluster" :class="{ 'with-announcements': showAnnouncements }">
+            <div class="home-cluster" :class="{ 'with-rail': showHomeRail }">
               <div class="home-flow">
                 <LaunchpadRows :rows="homeFlowRows" :show-view-all="true" @select-nav="selectNav" />
               </div>
-              <div class="desktop-announcements">
-                <AnnouncementsPanel
-                  v-if="showAnnouncements"
-                  :items="announcements"
-                  :show-view-all="true"
-                  @view-all="selectNav(ANNOUNCEMENTS_NAV)"
-                  @more="openAnnouncement"
-                />
+              <div v-if="showHomeRail" class="home-rail">
+                <div class="desktop-announcements">
+                  <AnnouncementsPanel
+                    v-if="showAnnouncements"
+                    :items="announcements"
+                    :show-view-all="true"
+                    @view-all="selectNav(ANNOUNCEMENTS_NAV)"
+                    @more="openAnnouncement"
+                  />
+                </div>
+                <div v-if="homePoliciesRows.length" class="home-policies">
+                  <LaunchpadRows :rows="homePoliciesRows" :show-view-all="true" @select-nav="selectNav" />
+                </div>
               </div>
             </div>
             <LaunchpadRows :rows="homeBottomRows" :show-view-all="true" @select-nav="selectNav" />
@@ -1221,7 +1266,7 @@ kbd {
   align-items: start;
 }
 
-.home-cluster.with-announcements {
+.home-cluster.with-rail {
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
 }
 
@@ -1231,6 +1276,23 @@ kbd {
 
 .home-flow :deep(.grid-row:last-child) {
   margin-bottom: 0;
+}
+
+.home-rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.home-policies :deep(.grid-row) {
+  margin-bottom: 0;
+}
+
+.home-policies :deep(.section) {
+  background: #fff;
+  border: 1px solid #e7ecf1;
+  box-shadow: 0 1px 2px rgb(26 31 38 / 4%);
 }
 
 .privileges-load-error {
@@ -1458,7 +1520,7 @@ kbd {
     padding: 0.5rem max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   }
 
-  .home-cluster.with-announcements {
+  .home-cluster.with-rail {
     grid-template-columns: minmax(0, 1fr);
   }
 

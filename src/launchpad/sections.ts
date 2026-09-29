@@ -11,6 +11,7 @@ export interface LaunchpadTile {
   order: number
   tags: string[]
   openInNewWindow: boolean
+  owner?: string
 }
 
 export interface LaunchpadSection {
@@ -107,8 +108,14 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
   if (!identifier || !name) {
     return null
   }
+  if (privilege.metadata?.active === false) {
+    return null
+  }
   const url = privilege.metadata?.url
   const icon = typeof privilege.metadata?.icon === 'string' ? privilege.metadata.icon.trim() : ''
+  const owner = typeof privilege.metadata?.owner === 'string' ? privilege.metadata.owner.trim() : ''
+  const sectionId = privilege.metadata?.sectionId
+  const forceNewWindow = sectionId === 'shared-libraries' || privilege.metadata?.openInNewWindow === true
   return {
     identifier,
     name,
@@ -119,7 +126,8 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
     textColor: asColor(privilege.metadata?.textColor),
     order: Number(privilege.metadata?.order) || 0,
     tags: asTags(privilege.metadata?.tags),
-    openInNewWindow: privilege.metadata?.openInNewWindow === true,
+    openInNewWindow: forceNewWindow,
+    owner: owner || undefined,
   }
 }
 

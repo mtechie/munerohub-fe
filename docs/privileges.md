@@ -87,6 +87,18 @@ Privilege `metadata`:
 }
 ```
 
+```json
+{
+  "url": "https://example.munero.net/loop/people-ops",
+  "icon": "hub-icon-loop",
+  "order": 1,
+  "sectionId": "shared-libraries",
+  "owner": "People Ops",
+  "active": true,
+  "openInNewWindow": true
+}
+```
+
 `sections` catalog (same response):
 
 ```json
@@ -125,6 +137,32 @@ Privilege `metadata`:
     "order": 2,
     "pin": "end",
     "icon": "hub-icon-document",
+    "layout": "list",
+    "showIcon": true,
+    "showTags": false,
+    "showDescription": true
+  },
+  {
+    "id": "shared-libraries",
+    "title": "Shared libraries",
+    "row": 3,
+    "weight": 12,
+    "order": 2,
+    "pin": "bottom",
+    "icon": "hub-icon-loop",
+    "layout": "list",
+    "showIcon": true,
+    "showTags": false,
+    "showDescription": true
+  },
+  {
+    "id": "shared-libraries",
+    "title": "Shared libraries",
+    "row": 3,
+    "weight": 12,
+    "order": 2,
+    "pin": "bottom",
+    "icon": "hub-icon-loop",
     "layout": "list",
     "showIcon": true,
     "showTags": false,

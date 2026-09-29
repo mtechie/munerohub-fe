@@ -46,6 +46,8 @@ export interface Privilege {
     tags?: string[]
     sectionId?: string
     openInNewWindow?: boolean
+    owner?: string
+    active?: boolean
   }
 }
 

@@ -100,6 +100,7 @@ function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<st
             <span class="list-copy">
               <strong>{{ tile.name }}</strong>
               <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
+              <small v-if="section.showDescription && tile.owner">{{ tile.owner }}</small>
             </span>
             <span v-if="section.showTags && tile.tags.length" class="tile-tags">
               <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>
@@ -124,6 +125,7 @@ function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<st
             <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
             <strong>{{ tile.name }}</strong>
             <small v-if="section.showDescription && tile.description">{{ tile.description }}</small>
+            <small v-if="section.showDescription && tile.owner">{{ tile.owner }}</small>
           </component>
         </div>
       </section>

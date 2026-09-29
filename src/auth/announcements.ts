@@ -87,6 +87,9 @@ export async function fetchAnnouncements(accessToken: string | null): Promise<bo
     const body = await response.json().catch(() => null)
     const parsed = response.ok ? parseAnnouncements(body) : null
     if (!parsed) {
+      if (!announcementsState.loaded) {
+        announcementsState.loaded = true
+      }
       return false
     }
     announcementsState.items = parsed
@@ -94,6 +97,9 @@ export async function fetchAnnouncements(accessToken: string | null): Promise<bo
     lastSyncedAt = Date.now()
     return true
   } catch {
+    if (!announcementsState.loaded) {
+      announcementsState.loaded = true
+    }
     return false
   }
 }

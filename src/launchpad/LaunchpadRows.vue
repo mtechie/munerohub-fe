@@ -21,6 +21,17 @@ function tileHref(tile: LaunchpadTile): string | undefined {
   return tile.url
 }
 
+function tileLinkAttrs(tile: LaunchpadTile): Record<string, string> {
+  const href = tileHref(tile)
+  if (!href) {
+    return {}
+  }
+  if (tile.openInNewWindow) {
+    return { href, target: '_blank', rel: 'noopener noreferrer' }
+  }
+  return { href }
+}
+
 function letterMark(name: string): string {
   const letter = name.trim().charAt(0)
   return letter ? letter.toUpperCase() : '?'
@@ -82,7 +93,7 @@ function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<st
             :key="tile.identifier"
             class="list-item"
             :style="tileChrome(tile)"
-            v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
+            v-bind="tileLinkAttrs(tile)"
           >
             <span v-if="section.showIcon && tile.icon" class="tile-icon" :class="tile.icon" aria-hidden="true"></span>
             <span v-else-if="section.showIcon" class="tile-icon letter-mark" aria-hidden="true">{{ letterMark(tile.name) }}</span>
@@ -104,7 +115,7 @@ function tileChrome(tile: { iconColor?: string; textColor?: string }): Record<st
             class="tile"
             :class="{ 'tile-detail': section.showDescription }"
             :style="tileChrome(tile)"
-            v-bind="tileHref(tile) ? { href: tileHref(tile), target: '_blank', rel: 'noreferrer' } : {}"
+            v-bind="tileLinkAttrs(tile)"
           >
             <span v-if="section.showTags && tile.tags.length" class="tile-tags">
               <span v-for="tag in tile.tags" :key="tag" class="tile-tag">{{ tag }}</span>

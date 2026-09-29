@@ -26,6 +26,7 @@ interface SearchHit {
   iconColor?: string
   textColor?: string
   url?: string
+  openInNewWindow?: boolean
 }
 
 const givenName = computed(() => {
@@ -79,6 +80,9 @@ const userMenuRoot = ref<HTMLElement | null>(null)
 
 const showAnnouncements = computed(() => announcements.value.length > 0)
 const hasUrgentAnnouncements = computed(() => announcements.value.some((item) => item.priority === 'High'))
+const HOME_ANNOUNCEMENT_LIMIT = 3
+const homeAnnouncementItems = computed(() => announcements.value.slice(0, HOME_ANNOUNCEMENT_LIMIT))
+const showAnnouncementsViewAll = computed(() => announcements.value.length > HOME_ANNOUNCEMENT_LIMIT)
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -185,8 +189,6 @@ const homePoliciesRows = computed((): LaunchpadRow[] => {
   }
   return [{ row: 1, sections: [section] }]
 })
-
-const showHomeRail = computed(() => showAnnouncements.value || Boolean(homePoliciesSection.value))
 
 const homeFlowRows = computed(() =>
   layoutRows.value
@@ -425,6 +427,7 @@ const visibleResources = computed((): SearchHit[] => {
           iconColor: tile.iconColor,
           textColor: tile.textColor,
           url: tile.url,
+          openInNewWindow: tile.openInNewWindow,
         })
       }
     }
@@ -504,7 +507,11 @@ function openResource(hit: SearchHit | undefined): void {
   if (!hit?.url) {
     return
   }
-  window.open(hit.url, '_blank', 'noopener,noreferrer')
+  if (hit.openInNewWindow) {
+    window.open(hit.url, '_blank', 'noopener,noreferrer')
+  } else {
+    window.location.assign(hit.url)
+  }
   searchQuery.value = ''
   closeSearch()
   searchInput.value?.blur()
@@ -716,24 +723,25 @@ async function signOut(): Promise<void> {
           </section>
 
           <AnnouncementsPanel
-            v-if="activeNavId === ANNOUNCEMENTS_NAV && showAnnouncements"
+            v-if="activeNavId === ANNOUNCEMENTS_NAV"
             :items="announcements"
+            :loading="!announcementsLoaded"
             :show-back="true"
             @back="goHome"
             @more="openAnnouncement"
           />
 
           <template v-else-if="activeNavId === HOME_NAV">
-            <div class="home-cluster" :class="{ 'with-rail': showHomeRail }">
+            <div class="home-cluster with-rail">
               <div class="home-flow">
                 <LaunchpadRows :rows="homeFlowRows" :show-view-all="true" @select-nav="selectNav" />
               </div>
-              <div v-if="showHomeRail" class="home-rail">
-                <div class="desktop-announcements">
+              <div class="home-rail">
+                <div class="home-announcements">
                   <AnnouncementsPanel
-                    v-if="showAnnouncements"
-                    :items="announcements"
-                    :show-view-all="true"
+                    :items="homeAnnouncementItems"
+                    :loading="!announcementsLoaded"
+                    :show-view-all="showAnnouncementsViewAll"
                     @view-all="selectNav(ANNOUNCEMENTS_NAV)"
                     @more="openAnnouncement"
                   />
@@ -1522,10 +1530,6 @@ kbd {
 
   .home-cluster.with-rail {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .desktop-announcements {
-    display: none;
   }
 }
 </style>

@@ -10,6 +10,7 @@ export interface LaunchpadTile {
   textColor?: string
   order: number
   tags: string[]
+  openInNewWindow: boolean
 }
 
 export interface LaunchpadSection {
@@ -118,6 +119,7 @@ function toTile(privilege: Privilege): LaunchpadTile | null {
     textColor: asColor(privilege.metadata?.textColor),
     order: Number(privilege.metadata?.order) || 0,
     tags: asTags(privilege.metadata?.tags),
+    openInNewWindow: privilege.metadata?.openInNewWindow === true,
   }
 }
 

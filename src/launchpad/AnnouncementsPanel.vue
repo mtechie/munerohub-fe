@@ -4,6 +4,7 @@ import AnnouncementCard from './AnnouncementCard.vue'
 
 defineProps<{
   items: HubAnnouncement[]
+  loading?: boolean
   showViewAll?: boolean
   showBack?: boolean
 }>()
@@ -40,7 +41,12 @@ const emit = defineEmits<{
       </button>
     </header>
 
-    <div class="announcement-list">
+    <div v-if="loading" class="announcement-status" role="status" aria-live="polite" aria-busy="true">
+      <span class="announcement-spinner" aria-hidden="true"></span>
+      <p>Loading announcements…</p>
+    </div>
+    <p v-else-if="!items.length" class="announcement-empty">No announcements</p>
+    <div v-else class="announcement-list">
       <AnnouncementCard
         v-for="item in items"
         :key="item.id"
@@ -100,5 +106,41 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+.announcement-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1.1rem 0.5rem;
+  color: #6b7380;
+  font-size: 0.88rem;
+}
+
+.announcement-status p {
+  margin: 0;
+}
+
+.announcement-spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0.18rem solid #e7ecf1;
+  border-top-color: #f47b20;
+  border-radius: 999px;
+  animation: announcement-spin 0.7s linear infinite;
+}
+
+.announcement-empty {
+  margin: 0;
+  padding: 0.55rem 0 0.2rem;
+  color: #6b7380;
+  font-size: 0.9rem;
+}
+
+@keyframes announcement-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
